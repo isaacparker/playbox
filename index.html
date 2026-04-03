@@ -827,46 +827,37 @@ async function processRecording() {
   const spectrum = analyzeSpectrum(channelData, sampleRate);
   const brightness = spectrum.brightness;
 
-  let isPercussive, oscType, filterCutoff, filterQ, envAttack, envDecay, envSustain, envRelease;
-  let driveAmount = 0, filtEnvAmount = 0, layerName;
+  // Pick the best preset based on intent or auto-detect
+  const intentId = intent ? intent.id : null;
+  let presetCategory, isPercussive, layerName, activePreset;
 
   if (intent) {
+    presetCategory = intent.id;
     isPercussive = intent.perc;
-    oscType = intent.osc;
-    filterCutoff = intent.filter;
-    filterQ = intent.q;
-    envAttack = intent.attack;
-    envDecay = intent.decay;
-    envSustain = intent.sustain;
-    envRelease = intent.release;
-    driveAmount = intent.drive || 0;
-    filtEnvAmount = intent.filtEnv || 0;
     layerName = intent.label;
-  }
-  const intentId = intent ? intent.id : null;
-  if (!intent) {
+  } else {
+    // Auto-detect: pick category from spectral analysis
     isPercussive = spectrum.isPercussive;
-    filterQ = 1;
     if (isPercussive) {
-      oscType = brightness > 0.5 ? 'white' : 'brown';
-      filterCutoff = 1000 + Math.round(brightness * 9000);
-      envAttack = 0.001;
-      envDecay = 0.05 + (1 - brightness) * 0.3;
-      envSustain = 0;
-      envRelease = 0;
+      presetCategory = brightness > 0.6 ? 'hat' : brightness > 0.3 ? 'snare' : 'kick';
     } else {
-      if (brightness > 0.6) oscType = 'sawtooth';
-      else if (brightness > 0.4) oscType = 'square';
-      else if (brightness > 0.2) oscType = 'triangle';
-      else oscType = 'sine';
-      filterCutoff = 800 + Math.round(brightness * 9200);
-      envAttack = 0.01 + (1 - brightness) * 0.1;
-      envDecay = 0.1 + brightness * 0.4;
-      envSustain = 0.2 + (1 - brightness) * 0.5;
-      envRelease = 0.1 + (1 - brightness) * 0.3;
+      presetCategory = brightness > 0.5 ? 'lead' : brightness > 0.2 ? 'bass' : 'pad';
     }
     layerName = analysis.fallbackNote;
   }
+
+  // Use first preset in category as starting point
+  const preset = PRESETS[presetCategory][0];
+  activePreset = preset.name;
+  const oscType = preset.osc;
+  const filterCutoff = preset.filter;
+  const filterQ = preset.q;
+  const envAttack = preset.attack;
+  const envDecay = preset.decay;
+  const envSustain = preset.sustain;
+  const envRelease = preset.release;
+  const driveAmount = preset.drive;
+  const filtEnvAmount = preset.filtEnv;
 
   // 3. Create layer with per-step notes and durations
   const layerIdx = currentScene().layers.length;
@@ -894,6 +885,7 @@ async function processRecording() {
     envSustain,
     envRelease,
     driveAmount: driveAmount || 0,
+    activePreset: activePreset || null,
     octave: 0,
     synthOpen: false,
     synth: null,
