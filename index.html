@@ -1620,7 +1620,7 @@ function renderAllLayers() {
       presetChips.className = 'osc-chips';
       presets.forEach(p => {
         const chip = document.createElement('button');
-        chip.className = 'osc-chip';
+        chip.className = 'osc-chip' + (layer.activePreset === p.name ? ' active' : '');
         chip.textContent = p.name;
         chip.addEventListener('click', () => {
           layer.oscType = p.osc;
@@ -1632,13 +1632,12 @@ function renderAllLayers() {
           layer.filterQ = p.q;
           layer.filtEnvAmount = p.filtEnv;
           layer.driveAmount = p.drive;
+          layer.activePreset = p.name;
           createSynthForLayer(layer);
           if (layer.filter) {
             layer.filter.frequency.value = layer.filterCutoff;
             layer.filter.Q.value = layer.filterQ;
           }
-          presetChips.querySelectorAll('.osc-chip').forEach(c => c.classList.remove('active'));
-          chip.classList.add('active');
           expandedLayers.add(layer.id);
           renderAllLayers();
         });
