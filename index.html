@@ -762,10 +762,13 @@ flowBtn.addEventListener('pointercancel', (e) => {
 function startRecording() {
   setState('RECORDING');
   recordedChunks = [];
-  // Mute playback while recording
+  // Mute all playback while recording (prevents speaker bleed into mic)
   currentScene().layers.forEach(l => {
     if (l.synth) { try { l.synth.volume.value = -Infinity; } catch(e){} }
+    if (l.synth2) { try { l.synth2.volume.value = -Infinity; } catch(e){} }
+    if (l.subOsc) { try { l.subOsc.volume.value = -Infinity; } catch(e){} }
   });
+  if (roomGain) roomGain.gain.value = 0;
   try {
     mediaRecorder = new MediaRecorder(mediaStream, { mimeType: 'audio/webm;codecs=opus' });
   } catch(e) {
@@ -790,12 +793,13 @@ function stopRecording() {
   if (mediaRecorder && mediaRecorder.state !== 'inactive') {
     mediaRecorder.stop();
   }
-  // Restore volumes
+  // Restore all volumes
   currentScene().layers.forEach(l => {
-    if (l.synth) {
-      try { l.synth.volume.value = Tone.gainToDb(l.volume); } catch(e){}
-    }
+    if (l.synth) { try { l.synth.volume.value = Tone.gainToDb(l.volume); } catch(e){} }
+    if (l.synth2) { try { l.synth2.volume.value = -6; } catch(e){} }
+    if (l.subOsc) { try { l.subOsc.volume.value = -10; } catch(e){} }
   });
+  if (roomGain) roomGain.gain.value = parseInt(roomMixSlider.value) / 100;
   setState('PROCESSING');
 }
 
