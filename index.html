@@ -48,7 +48,7 @@ display:flex;align-items:center;gap:8px;padding:8px 12px;
 background:rgba(13,13,13,0.85);-webkit-backdrop-filter:blur(16px);backdrop-filter:blur(16px);
 border-bottom:1px solid var(--accent);border-left:1px solid var(--accent);border-right:1px solid var(--accent);
 border-radius:0 0 12px 12px;
-flex-shrink:0;min-height:52px;flex-wrap:wrap;z-index:2;
+flex-shrink:0;min-height:52px;z-index:2;overflow-x:auto;
 }
 .transport-btn{
 min-width:44px;min-height:44px;background:var(--surface3);color:var(--text);
@@ -266,12 +266,7 @@ min-height:32px;display:flex;align-items:center;
 <span id="bpm-display">90</span>
 <div class="scene-sel" id="scene-sel"></div>
 <button class="transport-btn" id="dup-scene-btn" title="Duplicate Scene">+S</button>
-<span id="scale-badge" class="scale-badge" style="display:none"></span>
-<div id="room-wrap" style="display:flex;align-items:center;gap:4px;margin-left:auto">
-<button class="transport-btn" id="room-btn" style="font-size:11px;padding:4px 8px;min-width:auto">Room</button>
-<span id="room-status" style="font-size:10px;display:none"></span>
-<input type="range" id="room-mix-slider" min="0" max="100" value="50" style="display:none;width:50px;height:36px;accent-color:var(--accent)">
-</div>
+<span id="scale-badge" class="scale-badge" style="display:none;margin-left:auto"></span>
 </div>
 <div id="center">
 <div id="pulse-wave"></div>
@@ -281,6 +276,10 @@ min-height:32px;display:flex;align-items:center;
 <span id="flow-label">Hold to Record</span>
 <span id="flow-sub">voice &rarr; synth</span>
 </button>
+<div id="room-wrap" style="position:absolute;bottom:8px;right:12px;display:flex;align-items:center;gap:4px;z-index:1">
+<button id="room-btn" style="font-size:10px;padding:4px 8px;background:var(--surface3);color:var(--text-dim);border:1px solid var(--border);border-radius:8px;cursor:pointer;touch-action:none">Room</button>
+<input type="range" id="room-mix-slider" min="0" max="100" value="50" style="display:none;width:50px;height:28px;accent-color:var(--accent)">
+</div>
 <div id="step-indicator">Step: 1 / 16</div>
 </div>
 <div id="layers-area">
