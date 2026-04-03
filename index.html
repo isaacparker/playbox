@@ -173,19 +173,24 @@ display:flex;align-items:center;justify-content:center;touch-action:none;
 }
 .synth-toggle.open{color:var(--accent);border-color:var(--accent)}
 .synth-panel{
-display:none;flex-direction:column;gap:10px;padding:10px;
+display:none;flex-direction:column;gap:6px;padding:6px;
 background:var(--surface);border:1px solid var(--border);border-radius:6px;
 }
 .synth-panel.open{display:flex}
-.synth-section-label{font-size:9px;color:var(--text-dim);text-transform:uppercase;letter-spacing:1px;margin-bottom:-4px}
+.synth-group{
+background:var(--surface2);border-radius:6px;padding:8px;
+display:flex;flex-direction:column;gap:6px;
+}
+.synth-group-label{font-size:9px;color:var(--text-dim);text-transform:uppercase;letter-spacing:1px}
 .osc-chips{display:flex;gap:4px;flex-wrap:wrap}
 .osc-chip{
-font-size:11px;padding:4px 10px;background:var(--surface2);color:var(--text-dim);
+font-size:11px;padding:4px 10px;background:var(--bg);color:var(--text-dim);
 border:1px solid var(--border);border-radius:12px;cursor:pointer;touch-action:none;
 min-height:32px;display:flex;align-items:center;
 }
 .osc-chip.active{color:var(--text);border-color:var(--layer-color,#0ff);background:rgba(255,255,255,0.05)}
-.osc-chips.note-chips .osc-chip{padding:4px 6px;min-height:28px;font-size:10px}
+.osc-chips.note-chips{gap:3px}
+.osc-chips.note-chips .osc-chip{padding:4px 6px;min-height:28px;font-size:10px;border-radius:6px}
 .synth-row{display:flex;align-items:center;gap:8px}
 .synth-row label{font-size:10px;color:var(--text-dim);min-width:28px}
 .synth-row input[type=range]{flex:1;height:36px;accent-color:var(--layer-color,#0ff)}
@@ -1142,11 +1147,13 @@ function renderAllLayers() {
       synthToggle.textContent = layer.synthOpen ? '\u2715' : '\u266B';
     });
 
-    // Waveform / noise type chips
-    const oscSectionLabel = document.createElement('div');
-    oscSectionLabel.className = 'synth-section-label';
-    oscSectionLabel.textContent = layer.isPercussive ? 'Noise' : 'Waveform';
-    synthPanel.appendChild(oscSectionLabel);
+    // --- Waveform group ---
+    const oscGroup = document.createElement('div');
+    oscGroup.className = 'synth-group';
+    const oscGroupLabel = document.createElement('div');
+    oscGroupLabel.className = 'synth-group-label';
+    oscGroupLabel.textContent = layer.isPercussive ? 'Noise' : 'Waveform';
+    oscGroup.appendChild(oscGroupLabel);
 
     const oscChips = document.createElement('div');
     oscChips.className = 'osc-chips';
@@ -1169,14 +1176,17 @@ function renderAllLayers() {
       });
       oscChips.appendChild(chip);
     });
-    synthPanel.appendChild(oscChips);
+    oscGroup.appendChild(oscChips);
+    synthPanel.appendChild(oscGroup);
 
-    // Pitch section (tonal only)
+    // --- Pitch group (tonal only) ---
     if (!layer.isPercussive) {
-      const pitchLabel = document.createElement('div');
-      pitchLabel.className = 'synth-section-label';
-      pitchLabel.textContent = 'Pitch';
-      synthPanel.appendChild(pitchLabel);
+      const pitchGroup = document.createElement('div');
+      pitchGroup.className = 'synth-group';
+      const pitchGroupLabel = document.createElement('div');
+      pitchGroupLabel.className = 'synth-group-label';
+      pitchGroupLabel.textContent = 'Pitch';
+      pitchGroup.appendChild(pitchGroupLabel);
 
       const noteChips = document.createElement('div');
       noteChips.className = 'osc-chips note-chips';
@@ -1191,14 +1201,12 @@ function renderAllLayers() {
           noteChips.querySelectorAll('.osc-chip').forEach(c => {
             c.classList.toggle('active', c.textContent === n);
           });
-          // Update header note display
           if (headerNoteDisp) headerNoteDisp.textContent = getPlaybackNote(layer);
         });
         noteChips.appendChild(chip);
       });
-      synthPanel.appendChild(noteChips);
+      pitchGroup.appendChild(noteChips);
 
-      // Octave row in synth panel
       const octRow = document.createElement('div');
       octRow.className = 'synth-row';
       const octLabel = document.createElement('label');
@@ -1232,14 +1240,17 @@ function renderAllLayers() {
       octRow.appendChild(octDownPanel);
       octRow.appendChild(octDisplay);
       octRow.appendChild(octUpPanel);
-      synthPanel.appendChild(octRow);
+      pitchGroup.appendChild(octRow);
+      synthPanel.appendChild(pitchGroup);
     }
 
-    // Envelope section
-    const envLabel = document.createElement('div');
-    envLabel.className = 'synth-section-label';
-    envLabel.textContent = 'Envelope';
-    synthPanel.appendChild(envLabel);
+    // --- Envelope group ---
+    const envGroup = document.createElement('div');
+    envGroup.className = 'synth-group';
+    const envGroupLabel = document.createElement('div');
+    envGroupLabel.className = 'synth-group-label';
+    envGroupLabel.textContent = 'Envelope';
+    envGroup.appendChild(envGroupLabel);
 
     const envParams = layer.isPercussive
       ? [['Atk', 'envAttack', 0.001, 0.5, 0.001], ['Dec', 'envDecay', 0.01, 1, 0.01], ['Sus', 'envSustain', 0, 1, 0.01]]
@@ -1280,16 +1291,18 @@ function renderAllLayers() {
       row.appendChild(lbl);
       row.appendChild(slider);
       row.appendChild(val);
-      synthPanel.appendChild(row);
+      envGroup.appendChild(row);
     });
+    synthPanel.appendChild(envGroup);
 
-    // Filter section
-    const filtLabel = document.createElement('div');
-    filtLabel.className = 'synth-section-label';
-    filtLabel.textContent = 'Filter';
-    synthPanel.appendChild(filtLabel);
+    // --- Filter group ---
+    const filtGroup = document.createElement('div');
+    filtGroup.className = 'synth-group';
+    const filtGroupLabel = document.createElement('div');
+    filtGroupLabel.className = 'synth-group-label';
+    filtGroupLabel.textContent = 'Filter';
+    filtGroup.appendChild(filtGroupLabel);
 
-    // Filter cutoff
     const filtRow = document.createElement('div');
     filtRow.className = 'synth-row';
     const filtLbl = document.createElement('label');
@@ -1316,9 +1329,8 @@ function renderAllLayers() {
     filtRow.appendChild(filtLbl);
     filtRow.appendChild(filtSlider);
     filtRow.appendChild(filtVal);
-    synthPanel.appendChild(filtRow);
+    filtGroup.appendChild(filtRow);
 
-    // Filter resonance (Q)
     const resRow = document.createElement('div');
     resRow.className = 'synth-row';
     const resLbl = document.createElement('label');
@@ -1345,7 +1357,8 @@ function renderAllLayers() {
     resRow.appendChild(resLbl);
     resRow.appendChild(resSlider);
     resRow.appendChild(resVal);
-    synthPanel.appendChild(resRow);
+    filtGroup.appendChild(resRow);
+    synthPanel.appendChild(filtGroup);
 
     strip.appendChild(synthPanel);
 
