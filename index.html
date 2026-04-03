@@ -882,7 +882,7 @@ function createSynthForLayer(layer) {
       envelope: { attack: layer.envAttack, decay: layer.envDecay, sustain: layer.envSustain }
     });
   } else {
-    layer.synth = new Tone.PolySynth(Tone.Synth, {
+    layer.synth = new Tone.Synth({
       oscillator: { type: layer.oscType || 'sawtooth' },
       envelope: { attack: layer.envAttack, decay: layer.envDecay, sustain: layer.envSustain, release: layer.envRelease }
     });
@@ -890,6 +890,27 @@ function createSynthForLayer(layer) {
 
   layer.synth.connect(layer.filter);
   layer.synth.volume.value = Tone.gainToDb(layer.volume);
+}
+
+// Update synth params without full rebuild (avoids audio glitches)
+function updateSynthParams(layer) {
+  if (!layer.synth) return;
+  try {
+    if (layer.isPercussive) {
+      layer.synth.set({
+        noise: { type: layer.oscType || 'white' },
+        envelope: { attack: layer.envAttack, decay: layer.envDecay, sustain: layer.envSustain }
+      });
+    } else {
+      layer.synth.set({
+        oscillator: { type: layer.oscType || 'sawtooth' },
+        envelope: { attack: layer.envAttack, decay: layer.envDecay, sustain: layer.envSustain, release: layer.envRelease }
+      });
+    }
+  } catch(e) {
+    // Fallback: full rebuild if .set() fails
+    createSynthForLayer(layer);
+  }
 }
 
 // ===== AI SUGGESTIONS =====
@@ -1176,7 +1197,7 @@ function renderAllLayers() {
       chip.textContent = oscLabels[oi];
       chip.addEventListener('click', () => {
         layer.oscType = opt;
-        createSynthForLayer(layer);
+        updateSynthParams(layer);
         oscChips.querySelectorAll('.osc-chip').forEach((c, ci) => {
           c.classList.toggle('active', ci === oi);
         });
