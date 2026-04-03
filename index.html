@@ -263,7 +263,7 @@ min-height:32px;display:flex;align-items:center;
 }
 .osc-chip.active{color:var(--text);border-color:var(--layer-color,#0ff);background:rgba(0,255,255,0.08)}
 .osc-chips.note-chips{gap:3px}
-.osc-chips.note-chips .osc-chip{padding:4px 6px;min-height:28px;font-size:10px;border-radius:6px}
+.osc-chips.note-chips .osc-chip{padding:0;width:32px;height:32px;font-size:10px;border-radius:6px;justify-content:center;flex-shrink:0}
 .synth-row{display:flex;align-items:center;gap:8px}
 .synth-row label{font-size:10px;color:var(--text-dim);min-width:28px}
 .synth-row input[type=range]{flex:1;height:36px;accent-color:var(--layer-color,#0ff)}
@@ -1744,7 +1744,7 @@ function renderAllLayers() {
       pitchGroup.className = 'synth-group';
       const pitchGroupLabel = document.createElement('div');
       pitchGroupLabel.className = 'synth-group-label';
-      pitchGroupLabel.textContent = 'Pitch';
+      pitchGroupLabel.textContent = 'Pitch' + (globalScale ? ' \u2014 ' + getScaleLabel() : '');
       pitchGroup.appendChild(pitchGroupLabel);
 
       const noteChips = document.createElement('div');
@@ -1997,6 +1997,15 @@ function renderAllLayers() {
       notePicker.style.display = 'flex';
       while (notePicker.firstChild) notePicker.removeChild(notePicker.firstChild);
       if (layer.isPercussive) { notePicker.style.display = 'none'; return; }
+      // Scale label
+      if (globalScale) {
+        const scLbl = document.createElement('span');
+        scLbl.className = 'scale-badge';
+        scLbl.style.fontSize = '9px';
+        scLbl.style.padding = '2px 6px';
+        scLbl.textContent = getScaleLabel();
+        notePicker.appendChild(scLbl);
+      }
       const currentNote = (layer.notes && layer.notes[s]) || layer.note || 'C4';
       const currentName = currentNote.replace(/\d+$/, '');
       const currentOct = parseInt(currentNote.match(/\d+$/)[0]);
