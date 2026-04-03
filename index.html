@@ -1664,46 +1664,6 @@ function renderAllLayers() {
       synthToggle.textContent = layer.synthOpen ? '\u2715' : '\u266B';
     });
 
-    // --- Preset group ---
-    const presetCategory = layer.intentId || (layer.isPercussive ? 'kick' : 'bass');
-    const presets = PRESETS[presetCategory] || [];
-    if (presets.length > 0) {
-      const presetGroup = document.createElement('div');
-      presetGroup.className = 'synth-group';
-      const presetLabel = document.createElement('div');
-      presetLabel.className = 'synth-group-label';
-      presetLabel.textContent = 'Preset';
-      presetGroup.appendChild(presetLabel);
-      const presetChips = document.createElement('div');
-      presetChips.className = 'osc-chips';
-      presets.forEach(p => {
-        const chip = document.createElement('button');
-        chip.className = 'osc-chip' + (layer.activePreset === p.name ? ' active' : '');
-        chip.textContent = p.name;
-        chip.addEventListener('click', () => {
-          layer.oscType = p.osc;
-          layer.envAttack = p.attack;
-          layer.envDecay = p.decay;
-          layer.envSustain = p.sustain;
-          layer.envRelease = p.release;
-          layer.filterCutoff = p.filter;
-          layer.filterQ = p.q;
-          layer.filtEnvAmount = p.filtEnv;
-          layer.driveAmount = p.drive;
-          layer.activePreset = p.name;
-          createSynthForLayer(layer);
-          if (layer.filter) {
-            layer.filter.frequency.value = layer.filterCutoff;
-            layer.filter.Q.value = layer.filterQ;
-          }
-          expandedLayers.add(layer.id);
-          renderAllLayers();
-        });
-        presetChips.appendChild(chip);
-      });
-      presetGroup.appendChild(presetChips);
-      synthPanel.appendChild(presetGroup);
-    }
 
     // --- Waveform group ---
     const oscGroup = document.createElement('div');
