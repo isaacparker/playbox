@@ -839,16 +839,18 @@ async function processRecording() {
   const channelData = audioBuffer.getChannelData(0);
   const sampleRate = audioBuffer.sampleRate;
 
-  // 1. Per-step analysis: onsets, pitch per step, durations
-  const analysis = analyzeStepAudio(channelData, sampleRate);
-
-  // 2. Determine synth character from intent or auto-detect
+  // 1. Get intent first so analysis can use it
   const intent = getSelectedIntent();
+  const intentId = intent ? intent.id : null;
+
+  // 2. Per-step analysis: onsets, pitch per step, durations
+  const analysis = analyzeStepAudio(channelData, sampleRate, intentId);
+
+  // 3. Determine synth character
   const spectrum = analyzeSpectrum(channelData, sampleRate);
   const brightness = spectrum.brightness;
 
   // Pick the best preset based on intent or auto-detect
-  const intentId = intent ? intent.id : null;
   let presetCategory, isPercussive, layerName, activePreset;
 
   if (intent) {
@@ -1111,12 +1113,22 @@ function quantizeToNote(freq) {
 
 // ===== PER-STEP AUDIO ANALYSIS =====
 // Detects onsets, pitch per step, and duration — the core of voice-to-sequence
-function analyzeStepAudio(data, sr) {
+function analyzeStepAudio(data, sr, intentId) {
   const barDuration = (60 / currentBPM) * 4;
   const stepDuration = barDuration / 16;
   const steps = new Array(16).fill(false);
   const notes = new Array(16).fill(null);
   const durations = new Array(16).fill('16n');
+
+  // Intent-aware settings
+  const isPerc = intentId === 'kick' || intentId === 'snare' || intentId === 'hat';
+  const isPad = intentId === 'pad';
+  // Higher threshold = fewer steps. Percussive needs sharp transients only.
+  const energyThreshold = isPerc ? 0.5 : isPad ? 0.6 : 0.35;
+  // Minimum gap between hits (in steps)
+  const minGap = isPerc ? 2 : isPad ? 4 : 1;
+  // Max active steps
+  const maxSteps = isPerc ? 6 : isPad ? 4 : 12;
 
   // 1. Compute RMS energy per step
   const stepEnergies = [];
@@ -1130,31 +1142,39 @@ function analyzeStepAudio(data, sr) {
     stepEnergies.push(Math.sqrt(sum / Math.max(end - startSamp, 1)));
   }
 
-  // 2. Find active steps — energy above adaptive threshold
+  // 2. Find onset steps using energy derivative (transient detection)
   const maxEnergy = Math.max(...stepEnergies);
-  const threshold = maxEnergy * 0.2;
+  const threshold = maxEnergy * energyThreshold;
+  const onsetSteps = [];
+  let lastOnset = -minGap;
+
   for (let s = 0; s < 16; s++) {
-    if (stepEnergies[s] > threshold && s * stepDuration * sr < data.length) {
+    if (s * stepDuration * sr >= data.length) continue;
+    if (stepEnergies[s] < threshold) continue;
+    // Check for energy jump (onset) or first strong step
+    const prev = s > 0 ? stepEnergies[s - 1] : 0;
+    const isOnset = (prev < threshold * 0.5) || (s === 0) || (stepEnergies[s] / Math.max(prev, 0.0001) > 2);
+    if (isOnset && (s - lastOnset) >= minGap) {
+      onsetSteps.push(s);
       steps[s] = true;
+      lastOnset = s;
     }
-  }
-  if (!steps.some(s => s)) {
-    const maxIdx = stepEnergies.indexOf(maxEnergy);
-    if (maxIdx >= 0) steps[maxIdx] = true;
   }
 
-  // 3. Detect onset steps — where energy jumps significantly (these are the "hits")
-  const onsetSteps = [];
-  for (let s = 0; s < 16; s++) {
-    if (!steps[s]) continue;
-    const prev = s > 0 ? stepEnergies[s - 1] : 0;
-    const ratio = prev > 0 ? stepEnergies[s] / prev : 10;
-    if (ratio > 1.5 || s === 0 || !steps[s - 1]) {
-      onsetSteps.push(s);
-    }
-  }
-  // If no clear onsets, treat all active steps as onsets
+  // Ensure at least one step
   if (onsetSteps.length === 0) {
+    const maxIdx = stepEnergies.indexOf(maxEnergy);
+    if (maxIdx >= 0) { steps[maxIdx] = true; onsetSteps.push(maxIdx); }
+  }
+
+  // Cap to maxSteps — keep the loudest ones
+  if (onsetSteps.length > maxSteps) {
+    const sorted = onsetSteps.slice().sort((a, b) => stepEnergies[b] - stepEnergies[a]);
+    const keep = new Set(sorted.slice(0, maxSteps));
+    for (let s = 0; s < 16; s++) {
+      if (steps[s] && !keep.has(s)) steps[s] = false;
+    }
+    onsetSteps.length = 0;
     for (let s = 0; s < 16; s++) if (steps[s]) onsetSteps.push(s);
   }
 
@@ -1200,20 +1220,21 @@ function analyzeStepAudio(data, sr) {
     }
   });
 
-  // 7. Compute durations — a hit sustains until energy drops or next onset
+  // 7. Compute durations — intent-aware
   for (let i = 0; i < onsetSteps.length; i++) {
     const s = onsetSteps[i];
-    const nextOnset = i + 1 < onsetSteps.length ? onsetSteps[i + 1] : 16;
-    // Count how many consecutive steps stay active
-    let dur = 1;
-    for (let j = s + 1; j < nextOnset && j < 16; j++) {
-      if (steps[j] && stepEnergies[j] > threshold * 0.5) dur++;
-      else break;
+    if (isPerc) {
+      durations[s] = '16n'; // percussive = always short
+    } else if (isPad) {
+      durations[s] = '2n'; // pads ring out
+    } else {
+      // Bass/lead — use energy to determine length
+      const nextOnset = i + 1 < onsetSteps.length ? onsetSteps[i + 1] : 16;
+      const gap = nextOnset - s;
+      if (gap >= 4) durations[s] = '4n';
+      else if (gap >= 2) durations[s] = '8n';
+      else durations[s] = '16n';
     }
-    // Map step count to Tone.js duration
-    if (dur >= 4) durations[s] = '4n';
-    else if (dur >= 2) durations[s] = '8n';
-    else durations[s] = '16n';
   }
 
   // Fill notes for non-onset active steps (sustained from previous)
