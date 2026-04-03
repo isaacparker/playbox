@@ -216,6 +216,11 @@ min-height:32px;display:flex;align-items:center;
 <button class="transport-btn" id="dup-scene-btn" title="Duplicate Scene">+S</button>
 <button class="transport-btn" id="room-btn">Room</button>
 <span id="room-status"></span>
+<div id="room-mix" style="display:none;align-items:center;gap:4px">
+<span style="font-size:10px;color:var(--text-dim)">Wet</span>
+<input type="range" id="room-mix-slider" min="0" max="100" value="50" style="width:60px;height:36px;accent-color:var(--accent)">
+<span id="room-mix-val" style="font-size:10px;color:var(--text-dim);min-width:28px">50%</span>
+</div>
 <span id="ai-status"></span>
 </div>
 <div id="center">
@@ -262,6 +267,7 @@ let aiReady = false;
 
 // Room reverb
 let roomConvolver = null;
+let roomGain = null;
 let roomCaptured = false;
 
 // Metronome visual
@@ -278,6 +284,9 @@ const sceneSel = document.getElementById('scene-sel');
 const dupSceneBtn = document.getElementById('dup-scene-btn');
 const roomBtn = document.getElementById('room-btn');
 const roomStatus = document.getElementById('room-status');
+const roomMixEl = document.getElementById('room-mix');
+const roomMixSlider = document.getElementById('room-mix-slider');
+const roomMixVal = document.getElementById('room-mix-val');
 const aiStatus = document.getElementById('ai-status');
 const beatRing = document.getElementById('beat-ring');
 const pulseWave = document.getElementById('pulse-wave');
@@ -455,7 +464,10 @@ async function initAudio() {
     }
     // Setup room convolver
     roomConvolver = Tone.context.createConvolver();
-    roomConvolver.connect(Tone.context.rawContext.destination);
+    roomGain = Tone.context.createGain();
+    roomGain.gain.value = 0.5;
+    roomConvolver.connect(roomGain);
+    roomGain.connect(Tone.context.rawContext.destination);
     overlay.style.display = 'none';
     setState('IDLE');
     startTransport();
@@ -1007,6 +1019,11 @@ async function suggestMelodyPattern(layer) {
 
 // ===== ROOM REVERB CAPTURE =====
 roomBtn.addEventListener('pointerdown', captureRoom);
+roomMixSlider.addEventListener('input', () => {
+  const val = parseInt(roomMixSlider.value);
+  roomMixVal.textContent = val + '%';
+  if (roomGain) roomGain.gain.value = val / 100;
+});
 
 async function captureRoom() {
   if (!mediaStream) { roomStatus.textContent = 'No mic'; roomStatus.style.display = 'inline'; return; }
@@ -1070,9 +1087,10 @@ async function captureRoom() {
       }
     });
 
-    roomStatus.textContent = 'Room captured \u2713';
+    roomStatus.textContent = '\u2713';
     roomStatus.style.display = 'inline';
     roomStatus.style.color = '#0a0';
+    roomMixEl.style.display = 'flex';
   } catch(e) {
     console.error('Room capture failed:', e);
     roomStatus.textContent = 'Failed';
