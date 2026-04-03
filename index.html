@@ -35,7 +35,7 @@ flex-direction:column;gap:16px;
 }
 #overlay .start-btn{
 font-size:24px;color:var(--accent);background:none;border:2px solid var(--accent);
-border-radius:50%;width:160px;height:160px;cursor:pointer;
+border-radius:50%;width:260px;height:260px;cursor:pointer;
 display:flex;align-items:center;justify-content:center;
 transition:transform 0.2s;
 }
@@ -485,6 +485,13 @@ function stopTransport() {
 startBtn.addEventListener('click', initAudio);
 playBtn.addEventListener('pointerdown', () => { if (appState !== 'INIT') startTransport(); });
 stopBtn.addEventListener('pointerdown', () => { if (appState !== 'INIT') stopTransport(); });
+
+// Auto-skip overlay if mic permission already granted
+if (navigator.permissions && navigator.permissions.query) {
+  navigator.permissions.query({ name: 'microphone' }).then(result => {
+    if (result.state === 'granted') initAudio();
+  }).catch(() => {});
+}
 
 // ===== AI LOADING =====
 async function loadAI() {
