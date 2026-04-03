@@ -325,50 +325,59 @@ bpmSlider.addEventListener('input', () => {
 
 // ===== AUDIO INIT =====
 async function initAudio() {
-  await Tone.start();
-  audioContext = Tone.context.rawContext;
-  Tone.Transport.bpm.value = currentBPM;
-  Tone.Transport.loop = true;
-  Tone.Transport.loopStart = 0;
-  Tone.Transport.loopEnd = '1m';
-  // Set up 16th note schedule
-  Tone.Transport.scheduleRepeat((time) => {
-    const step = Math.round(Tone.Transport.position.split(':').reduce((acc, v, i) => {
-      if (i === 0) return acc + parseInt(v) * 16;
-      if (i === 1) return acc + parseInt(v) * 4;
-      return acc + Math.round(parseFloat(v));
-    }, 0)) % 16;
-    currentStep = step;
-    // Play active synths
-    const scene = currentScene();
-    const hasSolo = scene.layers.some(l => l.solo);
-    scene.layers.forEach(l => {
-      if (l.muted) return;
-      if (hasSolo && !l.solo) return;
-      if (l.steps[step] && l.synth) {
-        try {
-          if (l.isPercussive) {
-            l.synth.triggerAttackRelease('16n', time);
-          } else {
-            l.synth.triggerAttackRelease(l.note || 'C4', '16n', time);
-          }
-        } catch(e) {}
-      }
-    });
-  }, '16n');
-  // Request mic
   try {
-    mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    // Resume AudioContext explicitly for mobile browsers
+    if (Tone.context.state !== 'running') {
+      await Tone.context.resume();
+    }
+    await Tone.start();
+    audioContext = Tone.context.rawContext;
+    Tone.Transport.bpm.value = currentBPM;
+    Tone.Transport.loop = true;
+    Tone.Transport.loopStart = 0;
+    Tone.Transport.loopEnd = '1m';
+    // Set up 16th note schedule
+    Tone.Transport.scheduleRepeat((time) => {
+      const step = Math.round(Tone.Transport.position.split(':').reduce((acc, v, i) => {
+        if (i === 0) return acc + parseInt(v) * 16;
+        if (i === 1) return acc + parseInt(v) * 4;
+        return acc + Math.round(parseFloat(v));
+      }, 0)) % 16;
+      currentStep = step;
+      // Play active synths
+      const scene = currentScene();
+      const hasSolo = scene.layers.some(l => l.solo);
+      scene.layers.forEach(l => {
+        if (l.muted) return;
+        if (hasSolo && !l.solo) return;
+        if (l.steps[step] && l.synth) {
+          try {
+            if (l.isPercussive) {
+              l.synth.triggerAttackRelease('16n', time);
+            } else {
+              l.synth.triggerAttackRelease(l.note || 'C4', '16n', time);
+            }
+          } catch(e) {}
+        }
+      });
+    }, '16n');
+    // Request mic
+    try {
+      mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    } catch(e) {
+      console.warn('Mic denied:', e);
+    }
+    // Setup room convolver
+    roomConvolver = Tone.context.createConvolver();
+    roomConvolver.connect(Tone.context.rawContext.destination);
+    overlay.style.display = 'none';
+    setState('IDLE');
+    startTransport();
+    loadAI();
   } catch(e) {
-    console.warn('Mic denied:', e);
+    console.error('initAudio failed:', e);
+    overlay.querySelector('p').textContent = 'Error: ' + e.message + ' — tap again';
   }
-  // Setup room convolver
-  roomConvolver = Tone.context.createConvolver();
-  roomConvolver.connect(Tone.context.rawContext.destination);
-  overlay.style.display = 'none';
-  setState('IDLE');
-  startTransport();
-  loadAI();
 }
 
 function startTransport() {
@@ -387,7 +396,7 @@ function stopTransport() {
   playBtn.classList.remove('active');
 }
 
-startBtn.addEventListener('pointerdown', initAudio);
+startBtn.addEventListener('click', initAudio);
 playBtn.addEventListener('pointerdown', () => { if (appState !== 'INIT') startTransport(); });
 stopBtn.addEventListener('pointerdown', () => { if (appState !== 'INIT') stopTransport(); });
 
