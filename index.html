@@ -199,6 +199,21 @@ opacity:0.4;
 }
 .step-cell.ghost:hover,.step-cell.ghost:active{opacity:0.7}
 .step-cell.current{box-shadow:inset 0 0 0 2px #fff}
+.step-cell.selected{box-shadow:inset 0 0 0 2px var(--accent);outline:2px solid var(--accent)}
+.step-note-label{
+position:absolute;bottom:1px;left:0;right:0;text-align:center;
+font-size:7px;color:rgba(0,0,0,0.6);pointer-events:none;font-weight:700;line-height:1;
+}
+.note-picker{
+display:flex;gap:3px;flex-wrap:wrap;align-items:center;padding:4px 0;
+}
+.note-picker .note-btn{
+font-size:10px;padding:3px 6px;background:var(--surface3);color:var(--text-dim);
+border:1px solid var(--border);border-radius:6px;cursor:pointer;touch-action:none;
+min-height:28px;display:flex;align-items:center;
+}
+.note-picker .note-btn.active{color:var(--text);border-color:var(--layer-color,#0ff);background:rgba(0,255,255,0.08)}
+.scale-badge{font-size:10px;color:var(--accent);padding:2px 6px;background:rgba(0,255,255,0.08);border-radius:4px;white-space:nowrap}
 .layer-controls{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 .layer-slider-group{display:flex;align-items:center;gap:4px;flex:1;min-width:100px}
 .layer-slider-group label{font-size:10px;color:var(--text-dim);min-width:24px}
@@ -251,6 +266,7 @@ min-height:32px;display:flex;align-items:center;
 <span id="bpm-display">90</span>
 <div class="scene-sel" id="scene-sel"></div>
 <button class="transport-btn" id="dup-scene-btn" title="Duplicate Scene">+S</button>
+<span id="scale-badge" class="scale-badge" style="display:none"></span>
 <div id="room-wrap" style="display:flex;align-items:center;gap:4px;margin-left:auto">
 <button class="transport-btn" id="room-btn" style="font-size:11px;padding:4px 8px;min-width:auto">Room</button>
 <span id="room-status" style="font-size:10px;display:none"></span>
@@ -320,6 +336,7 @@ const bpmDisplay = document.getElementById('bpm-display');
 const sceneSel = document.getElementById('scene-sel');
 const dupSceneBtn = document.getElementById('dup-scene-btn');
 const roomBtn = document.getElementById('room-btn');
+const scaleBadge = document.getElementById('scale-badge');
 const roomStatus = document.getElementById('room-status');
 const roomMixSlider = document.getElementById('room-mix-slider');
 const beatRing = document.getElementById('beat-ring');
@@ -872,6 +889,19 @@ async function processRecording() {
   createSynthForLayer(layer);
   currentScene().layers.push(layer);
 
+  // Update global scale from all layers
+  updateGlobalScale();
+  if (globalScale) {
+    scaleBadge.textContent = getScaleLabel();
+    scaleBadge.style.display = 'inline';
+    // Quantize this layer's notes to scale
+    if (layer.notes && !layer.isPercussive) {
+      for (let s = 0; s < 16; s++) {
+        if (layer.notes[s]) layer.notes[s] = snapToScale(layer.notes[s]);
+      }
+    }
+  }
+
   // 5. AI suggestion
   requestAISuggestion(layer);
 
@@ -963,6 +993,77 @@ function yinPitch(buf, sr) {
 
 // ===== QUANTIZE TO CHROMATIC NOTE =====
 const NOTE_NAMES = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
+
+// ===== SCALE SYSTEM =====
+const SCALES = {
+  major:     [0,2,4,5,7,9,11],
+  minor:     [0,2,3,5,7,8,10],
+  dorian:    [0,2,3,5,7,9,10],
+  mixolydian:[0,2,4,5,7,9,10],
+  pentatonic:[0,2,4,7,9],
+  minorPent: [0,3,5,7,10],
+  blues:     [0,3,5,6,7,10],
+};
+let globalScale = null; // {root: 0-11, type: 'major', notes: [0,2,4...]}
+
+function detectScale(allNotes) {
+  // Collect pitch classes from all note strings
+  const pitchCounts = new Array(12).fill(0);
+  allNotes.forEach(n => {
+    if (!n) return;
+    const name = n.replace(/\d+$/, '');
+    const idx = NOTE_NAMES.indexOf(name);
+    if (idx >= 0) pitchCounts[idx]++;
+  });
+  // Score each root + scale combination
+  let bestScore = 0, bestRoot = 0, bestType = 'minor';
+  Object.entries(SCALES).forEach(([type, intervals]) => {
+    for (let root = 0; root < 12; root++) {
+      let score = 0;
+      intervals.forEach(i => { score += pitchCounts[(root + i) % 12]; });
+      if (score > bestScore) { bestScore = score; bestRoot = root; bestType = type; }
+    }
+  });
+  if (bestScore === 0) return null;
+  const scaleNotes = SCALES[bestType].map(i => (bestRoot + i) % 12);
+  return { root: bestRoot, type: bestType, notes: scaleNotes };
+}
+
+function getScaleNoteNames(scale, octave) {
+  if (!scale) return NOTE_NAMES.map(n => n + octave);
+  return scale.notes.map(pc => NOTE_NAMES[pc] + octave);
+}
+
+function updateGlobalScale() {
+  const allNotes = [];
+  currentScene().layers.forEach(l => {
+    if (l.notes) l.notes.forEach(n => { if (n) allNotes.push(n); });
+  });
+  if (allNotes.length >= 3) {
+    globalScale = detectScale(allNotes);
+  }
+}
+
+function getScaleLabel() {
+  if (!globalScale) return '';
+  return NOTE_NAMES[globalScale.root] + ' ' + globalScale.type;
+}
+
+function snapToScale(noteStr) {
+  if (!globalScale || !noteStr) return noteStr;
+  const name = noteStr.replace(/\d+$/, '');
+  const oct = parseInt(noteStr.match(/\d+$/)[0]);
+  const pc = NOTE_NAMES.indexOf(name);
+  if (pc < 0) return noteStr;
+  if (globalScale.notes.includes(pc)) return noteStr; // already in scale
+  // Find nearest scale note
+  let minDist = 12, closest = pc;
+  globalScale.notes.forEach(spc => {
+    const d = Math.min(Math.abs(pc - spc), 12 - Math.abs(pc - spc));
+    if (d < minDist) { minDist = d; closest = spc; }
+  });
+  return NOTE_NAMES[closest] + oct;
+}
 function freqToMidi(freq) {
   if (freq <= 0) return 0;
   return Math.round(12 * Math.log2(freq / 440) + 69);
@@ -1814,19 +1915,100 @@ function renderAllLayers() {
     // Step grid
     const grid = document.createElement('div');
     grid.className = 'step-grid';
+    let selectedStep = -1;
+    const notePicker = document.createElement('div');
+    notePicker.className = 'note-picker';
+    notePicker.style.display = 'none';
+
+    function showNotePicker(s) {
+      selectedStep = s;
+      notePicker.style.display = 'flex';
+      while (notePicker.firstChild) notePicker.removeChild(notePicker.firstChild);
+      if (layer.isPercussive) { notePicker.style.display = 'none'; return; }
+      const currentNote = (layer.notes && layer.notes[s]) || layer.note || 'C4';
+      const currentName = currentNote.replace(/\d+$/, '');
+      const currentOct = parseInt(currentNote.match(/\d+$/)[0]);
+      // Octave down
+      const octDown = document.createElement('button');
+      octDown.className = 'note-btn';
+      octDown.textContent = '\u2212';
+      octDown.addEventListener('click', () => {
+        const n = (layer.notes && layer.notes[s]) || layer.note || 'C4';
+        const nm = n.replace(/\d+$/, '');
+        const o = Math.max(1, parseInt(n.match(/\d+$/)[0]) - 1);
+        if (!layer.notes) layer.notes = new Array(16).fill(null);
+        layer.notes[s] = nm + o;
+        showNotePicker(s);
+      });
+      notePicker.appendChild(octDown);
+      // Scale notes or all notes
+      const scaleNotes = globalScale ? globalScale.notes : [0,1,2,3,4,5,6,7,8,9,10,11];
+      scaleNotes.forEach(pc => {
+        const n = NOTE_NAMES[pc];
+        const btn = document.createElement('button');
+        btn.className = 'note-btn' + (n === currentName ? ' active' : '');
+        btn.textContent = n;
+        btn.addEventListener('click', () => {
+          if (!layer.notes) layer.notes = new Array(16).fill(null);
+          layer.notes[s] = n + currentOct;
+          showNotePicker(s);
+        });
+        notePicker.appendChild(btn);
+      });
+      // Octave up
+      const octUp = document.createElement('button');
+      octUp.className = 'note-btn';
+      octUp.textContent = '+';
+      octUp.addEventListener('click', () => {
+        const n = (layer.notes && layer.notes[s]) || layer.note || 'C4';
+        const nm = n.replace(/\d+$/, '');
+        const o = Math.min(7, parseInt(n.match(/\d+$/)[0]) + 1);
+        if (!layer.notes) layer.notes = new Array(16).fill(null);
+        layer.notes[s] = nm + o;
+        showNotePicker(s);
+      });
+      notePicker.appendChild(octUp);
+      // Show current note
+      const cur = document.createElement('span');
+      cur.className = 'val';
+      cur.textContent = (layer.notes && layer.notes[s]) || currentNote;
+      notePicker.appendChild(cur);
+      // Highlight selected cell
+      grid.querySelectorAll('.step-cell').forEach(c => c.classList.remove('selected'));
+      grid.querySelector('[data-step="' + s + '"]').classList.add('selected');
+    }
+
     for (let s = 0; s < 16; s++) {
       const cell = document.createElement('div');
       cell.className = 'step-cell';
       cell.style.touchAction = 'none';
+      cell.style.position = 'relative';
       cell.dataset.step = s;
-      if (layer.steps[s]) cell.classList.add('on');
+      if (layer.steps[s]) {
+        cell.classList.add('on');
+        // Show note label on active tonal steps
+        if (!layer.isPercussive && layer.notes && layer.notes[s]) {
+          const lbl = document.createElement('div');
+          lbl.className = 'step-note-label';
+          lbl.textContent = layer.notes[s].replace(/\d+$/, '');
+          cell.appendChild(lbl);
+        }
+      }
       else if (layer.ghostSteps[s]) cell.classList.add('ghost');
       if (s === currentStep) cell.classList.add('current');
       cell.addEventListener('pointerdown', (e) => {
         e.preventDefault();
-        if (layer.steps[s]) {
+        if (layer.steps[s] && selectedStep !== s) {
+          // Select this step for note editing
+          showNotePicker(s);
+        } else if (layer.steps[s] && selectedStep === s) {
+          // Deselect / remove step
           layer.steps[s] = false;
-          cell.classList.remove('on');
+          if (layer.notes) layer.notes[s] = null;
+          cell.classList.remove('on', 'selected');
+          while (cell.firstChild) cell.removeChild(cell.firstChild);
+          notePicker.style.display = 'none';
+          selectedStep = -1;
         } else if (layer.ghostSteps[s]) {
           layer.ghostSteps[s] = false;
           layer.steps[s] = true;
@@ -1834,12 +2016,16 @@ function renderAllLayers() {
           cell.classList.add('on');
         } else {
           layer.steps[s] = true;
+          if (!layer.notes) layer.notes = new Array(16).fill(null);
+          layer.notes[s] = layer.note || 'C4';
           cell.classList.add('on');
+          showNotePicker(s);
         }
       });
       grid.appendChild(cell);
     }
     strip.appendChild(grid);
+    strip.appendChild(notePicker);
 
     // Controls row
     const controls = document.createElement('div');
