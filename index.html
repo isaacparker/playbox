@@ -113,6 +113,17 @@ box-shadow:0 0 30px rgba(255,50,50,0.3),0 0 60px rgba(255,50,50,0.1);
 #flow-btn.processing{border-color:#fa0}
 #flow-label{font-size:13px;font-weight:600;pointer-events:none;color:var(--text)}
 #flow-sub{font-size:10px;color:var(--text-dim);pointer-events:none;margin-top:4px}
+#intent-ring{
+position:absolute;width:300px;height:300px;pointer-events:none;z-index:11;
+}
+.intent-chip{
+position:absolute;pointer-events:auto;
+font-size:10px;padding:4px 8px;background:var(--surface3);color:var(--text-dim);
+border:1px solid var(--border);border-radius:10px;cursor:pointer;touch-action:none;
+transform:translate(-50%,-50%);white-space:nowrap;
+-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;
+}
+.intent-chip.active{color:var(--accent);border-color:var(--accent);background:rgba(0,255,255,0.08)}
 #step-indicator{
 position:absolute;bottom:12px;left:50%;transform:translateX(-50%);
 font-size:11px;color:var(--text-dim);font-variant-numeric:tabular-nums;
@@ -216,8 +227,8 @@ min-height:32px;display:flex;align-items:center;
 <div id="transport">
 <button class="transport-btn" id="play-btn">&#9654;</button>
 <button class="transport-btn" id="stop-btn">&#9632;</button>
-<input type="range" id="bpm-slider" min="60" max="200" value="120">
-<span id="bpm-display">120</span>
+<input type="range" id="bpm-slider" min="60" max="200" value="90">
+<span id="bpm-display">90</span>
 <div class="scene-sel" id="scene-sel"></div>
 <button class="transport-btn" id="dup-scene-btn" title="Duplicate Scene">+S</button>
 <button class="transport-btn" id="room-btn">Room</button>
@@ -232,6 +243,7 @@ min-height:32px;display:flex;align-items:center;
 <div id="center">
 <div id="pulse-wave"></div>
 <svg id="beat-ring" viewBox="0 0 300 300"></svg>
+<div id="intent-ring"></div>
 <button id="flow-btn">
 <span id="flow-label">Hold to Record</span>
 <span id="flow-sub">voice &rarr; synth</span>
@@ -252,7 +264,7 @@ const LAYER_COLORS = [
 
 // ===== STATE =====
 let appState = 'INIT'; // INIT, IDLE, RECORDING, PROCESSING, PLAYING
-let currentBPM = 120;
+let currentBPM = 90;
 let currentStep = 0;
 let isPlaying = false;
 let mediaStream = null;
@@ -301,6 +313,53 @@ const flowLabel = document.getElementById('flow-label');
 const flowSub = document.getElementById('flow-sub');
 const stepIndicator = document.getElementById('step-indicator');
 const layersArea = document.getElementById('layers-area');
+const intentRing = document.getElementById('intent-ring');
+
+// ===== SOUND INTENT =====
+const INTENTS = [
+  { id: 'kick',  label: 'Kick',  perc: true,  osc: 'brown', attack: 0.001, decay: 0.2,  sustain: 0, release: 0, filter: 800,  q: 2 },
+  { id: 'snare', label: 'Snare', perc: true,  osc: 'white', attack: 0.001, decay: 0.12, sustain: 0, release: 0, filter: 5000, q: 1 },
+  { id: 'hat',   label: 'Hat',   perc: true,  osc: 'white', attack: 0.001, decay: 0.05, sustain: 0, release: 0, filter: 8000, q: 1 },
+  { id: 'bass',  label: 'Bass',  perc: false, osc: 'square',   attack: 0.01, decay: 0.3,  sustain: 0.6, release: 0.1, filter: 1200, q: 2 },
+  { id: 'lead',  label: 'Lead',  perc: false, osc: 'sawtooth', attack: 0.01, decay: 0.2,  sustain: 0.5, release: 0.2, filter: 6000, q: 1 },
+  { id: 'pad',   label: 'Pad',   perc: false, osc: 'sine',     attack: 0.3,  decay: 0.5,  sustain: 0.7, release: 0.5, filter: 3000, q: 0.5 },
+];
+let selectedIntent = null;
+
+function createIntentChips() {
+  while (intentRing.firstChild) intentRing.removeChild(intentRing.firstChild);
+  INTENTS.forEach((intent, i) => {
+    const chip = document.createElement('button');
+    chip.className = 'intent-chip';
+    chip.textContent = intent.label;
+    // Position chips around the outside of the ring
+    const angle = (i / INTENTS.length) * Math.PI * 2 - Math.PI / 2;
+    const r = 175;
+    const cx = 150 + Math.cos(angle) * r;
+    const cy = 150 + Math.sin(angle) * r;
+    chip.style.left = cx + 'px';
+    chip.style.top = cy + 'px';
+    chip.addEventListener('click', () => {
+      if (selectedIntent === intent.id) {
+        selectedIntent = null;
+        flowSub.textContent = 'voice \u2192 synth';
+      } else {
+        selectedIntent = intent.id;
+        flowSub.textContent = intent.label;
+      }
+      intentRing.querySelectorAll('.intent-chip').forEach(c => {
+        c.classList.toggle('active', c.textContent === (selectedIntent ? intent.label : ''));
+      });
+    });
+    intentRing.appendChild(chip);
+  });
+}
+createIntentChips();
+
+function getSelectedIntent() {
+  if (!selectedIntent) return null;
+  return INTENTS.find(i => i.id === selectedIntent);
+}
 
 // ===== BEAT RING (16 thick arc segments) =====
 function arcPath(cx, cy, rOuter, rInner, startAngle, endAngle) {
@@ -645,50 +704,69 @@ async function processRecording() {
   const channelData = audioBuffer.getChannelData(0);
   const sampleRate = audioBuffer.sampleRate;
 
-  // 1. Spectral analysis -> percussive vs tonal + brightness
+  // 1. Check user intent or auto-detect
+  const intent = getSelectedIntent();
   const spectrum = analyzeSpectrum(channelData, sampleRate);
-  const isPercussive = spectrum.isPercussive;
   const brightness = spectrum.brightness;
 
-  // 2. Detect pitch (for tonal sounds)
-  let detectedFreq = 0;
-  let note = 'A3';
-  if (!isPercussive) {
-    detectedFreq = detectPitch(channelData, sampleRate);
-    note = quantizeToNote(detectedFreq);
+  let isPercussive, detectedFreq = 0, note = 'A3';
+  let oscType, filterCutoff, filterQ, envAttack, envDecay, envSustain, envRelease, layerName;
+
+  if (intent) {
+    // User declared intent — use preset synth params, still detect pitch/rhythm from audio
+    isPercussive = intent.perc;
+    oscType = intent.osc;
+    filterCutoff = intent.filter;
+    filterQ = intent.q;
+    envAttack = intent.attack;
+    envDecay = intent.decay;
+    envSustain = intent.sustain;
+    envRelease = intent.release;
+
+    if (!isPercussive) {
+      detectedFreq = detectPitch(channelData, sampleRate);
+      note = quantizeToNote(detectedFreq);
+    }
+    layerName = intent.label;
+  } else {
+    // Auto-detect from audio
+    isPercussive = spectrum.isPercussive;
+    if (!isPercussive) {
+      detectedFreq = detectPitch(channelData, sampleRate);
+      note = quantizeToNote(detectedFreq);
+    }
+    // Map brightness to synth character
+    filterQ = 1;
+    if (isPercussive) {
+      oscType = brightness > 0.5 ? 'white' : 'brown';
+      filterCutoff = 1000 + Math.round(brightness * 9000);
+      envAttack = 0.001;
+      envDecay = 0.05 + (1 - brightness) * 0.3;
+      envSustain = 0;
+      envRelease = 0;
+    } else {
+      if (brightness > 0.6) oscType = 'sawtooth';
+      else if (brightness > 0.4) oscType = 'square';
+      else if (brightness > 0.2) oscType = 'triangle';
+      else oscType = 'sine';
+      filterCutoff = 800 + Math.round(brightness * 9200);
+      envAttack = 0.01 + (1 - brightness) * 0.1;
+      envDecay = 0.1 + brightness * 0.4;
+      envSustain = 0.2 + (1 - brightness) * 0.5;
+      envRelease = 0.1 + (1 - brightness) * 0.3;
+    }
+    layerName = isPercussive ? 'Perc' : note;
   }
 
-  // 3. Detect transients and map to 16-step grid
+  // 2. Detect transients and map to 16-step grid
   const steps = detectTransients(channelData, sampleRate);
 
-  // 4. Map voice brightness to synth character
-  // Bright voice -> saw/square, high filter. Dark voice -> sine/triangle, low filter.
-  let oscType, filterCutoff, envAttack, envDecay, envSustain, envRelease;
-  if (isPercussive) {
-    oscType = brightness > 0.5 ? 'white' : 'brown';
-    filterCutoff = 1000 + Math.round(brightness * 9000);
-    envAttack = 0.001;
-    envDecay = 0.05 + (1 - brightness) * 0.3;
-    envSustain = 0;
-    envRelease = 0;
-  } else {
-    if (brightness > 0.6) oscType = 'sawtooth';
-    else if (brightness > 0.4) oscType = 'square';
-    else if (brightness > 0.2) oscType = 'triangle';
-    else oscType = 'sine';
-    filterCutoff = 800 + Math.round(brightness * 9200);
-    envAttack = 0.01 + (1 - brightness) * 0.1;
-    envDecay = 0.1 + brightness * 0.4;
-    envSustain = 0.2 + (1 - brightness) * 0.5;
-    envRelease = 0.1 + (1 - brightness) * 0.3;
-  }
-
-  // 5. Create layer
+  // 3. Create layer
   const layerIdx = currentScene().layers.length;
   const color = LAYER_COLORS[layerIdx % LAYER_COLORS.length];
   const layer = {
     id: Date.now(),
-    name: isPercussive ? 'Perc ' + (layerIdx+1) : note,
+    name: layerName,
     isPercussive,
     note,
     detectedFreq,
@@ -697,7 +775,7 @@ async function processRecording() {
     color,
     volume: 0.8,
     filterCutoff,
-    filterQ: 1,
+    filterQ: filterQ || 1,
     muted: false,
     solo: false,
     oscType,
