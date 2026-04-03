@@ -1,0 +1,1129 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>Vocal Synth Looper</title>
+<script src="https://cdn.jsdelivr.net/npm/tone@14.7.77/build/Tone.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@magenta/music@1.23.1"></script>
+<script src="https://cdn.jsdelivr.net/npm/meyda@5.6.4/dist/web/meyda.min.js"></script>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+--bg:#000;--surface:#111;--surface2:#1a1a1a;--border:#222;
+--text:#eee;--text-dim:#777;--accent:#0ff;--record:#f33;
+--safe-top:env(safe-area-inset-top,0px);
+--safe-bottom:env(safe-area-inset-bottom,0px);
+--safe-left:env(safe-area-inset-left,0px);
+--safe-right:env(safe-area-inset-right,0px);
+}
+html,body{
+background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
+overflow:hidden;height:100%;width:100%;position:fixed;top:0;left:0;
+-webkit-tap-highlight-color:transparent;-webkit-touch-callout:none;user-select:none;
+}
+#app{
+display:flex;flex-direction:column;height:100%;
+padding-top:var(--safe-top);padding-bottom:var(--safe-bottom);
+padding-left:var(--safe-left);padding-right:var(--safe-right);
+}
+/* OVERLAY */
+#overlay{
+position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.95);
+display:flex;align-items:center;justify-content:center;z-index:1000;
+flex-direction:column;gap:16px;
+}
+#overlay .start-btn{
+font-size:24px;color:var(--accent);background:none;border:2px solid var(--accent);
+border-radius:50%;width:160px;height:160px;cursor:pointer;
+display:flex;align-items:center;justify-content:center;
+transition:transform 0.2s;
+}
+#overlay .start-btn:active{transform:scale(0.95)}
+#overlay p{color:var(--text-dim);font-size:14px;margin-top:8px}
+/* TRANSPORT */
+#transport{
+display:flex;align-items:center;gap:8px;padding:8px 12px;
+background:var(--surface);border-bottom:1px solid var(--border);
+flex-shrink:0;min-height:52px;flex-wrap:wrap;
+}
+.transport-btn{
+min-width:44px;min-height:44px;background:var(--surface2);color:var(--text);
+border:1px solid var(--border);border-radius:8px;font-size:13px;cursor:pointer;
+padding:6px 10px;display:flex;align-items:center;justify-content:center;gap:4px;
+touch-action:none;
+}
+.transport-btn.active{border-color:var(--accent);color:var(--accent)}
+#bpm-display{
+font-size:16px;font-weight:700;color:var(--accent);min-width:60px;text-align:center;
+font-variant-numeric:tabular-nums;
+}
+#bpm-slider{width:80px;accent-color:var(--accent);height:44px}
+.scene-sel{display:flex;gap:4px}
+.scene-btn{
+min-width:44px;min-height:44px;background:var(--surface2);color:var(--text-dim);
+border:1px solid var(--border);border-radius:8px;font-size:13px;font-weight:700;
+cursor:pointer;display:flex;align-items:center;justify-content:center;
+touch-action:none;
+}
+.scene-btn.active{border-color:var(--accent);color:var(--accent);background:#001a1a}
+#ai-status{
+font-size:10px;color:var(--text-dim);margin-left:auto;white-space:nowrap;
+}
+#room-status{font-size:10px;color:#0a0;display:none;margin-left:4px}
+/* CENTER */
+#center{
+flex:1;display:flex;align-items:center;justify-content:center;
+position:relative;min-height:200px;
+}
+#metronome-ring{
+position:absolute;width:200px;height:200px;border-radius:50%;
+border:2px solid var(--border);transition:none;pointer-events:none;
+}
+#metronome-ring.pulse{border-color:var(--accent);box-shadow:0 0 20px rgba(0,255,255,0.15)}
+#beat-dots{
+position:absolute;width:200px;height:200px;pointer-events:none;
+}
+.beat-dot{
+position:absolute;width:8px;height:8px;border-radius:50%;background:var(--border);
+transform:translate(-50%,-50%);transition:background 0.1s;
+}
+.beat-dot.active{background:var(--accent)}
+#flow-btn{
+position:relative;z-index:10;width:150px;height:150px;border-radius:50%;
+background:radial-gradient(circle,#111 0%,#0a0a0a 100%);
+border:3px solid var(--border);cursor:pointer;
+display:flex;align-items:center;justify-content:center;flex-direction:column;
+touch-action:none;transition:border-color 0.2s,box-shadow 0.2s;
+}
+#flow-btn.recording{
+border-color:var(--record);
+box-shadow:0 0 30px rgba(255,50,50,0.3),0 0 60px rgba(255,50,50,0.1);
+}
+#flow-btn.processing{border-color:#fa0}
+#flow-label{font-size:13px;font-weight:600;pointer-events:none}
+#flow-sub{font-size:10px;color:var(--text-dim);pointer-events:none;margin-top:4px}
+#step-indicator{
+position:absolute;bottom:12px;left:50%;transform:translateX(-50%);
+font-size:11px;color:var(--text-dim);font-variant-numeric:tabular-nums;
+}
+/* LAYERS */
+#layers-area{
+flex:0 1 auto;max-height:45vh;overflow-y:auto;overflow-x:hidden;
+border-top:1px solid var(--border);-webkit-overflow-scrolling:touch;
+}
+#layers-area:empty::after{
+content:'Record to add layers';display:block;text-align:center;
+color:var(--text-dim);font-size:13px;padding:24px;
+}
+.layer-strip{
+display:flex;flex-direction:column;padding:10px 12px;
+border-bottom:1px solid var(--border);gap:6px;
+}
+.layer-header{display:flex;align-items:center;gap:8px}
+.layer-color{width:10px;height:10px;border-radius:50%;flex-shrink:0}
+.layer-name{font-size:12px;font-weight:600;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.layer-type{font-size:10px;color:var(--text-dim);background:var(--surface2);padding:2px 6px;border-radius:4px}
+.layer-btn{
+min-width:36px;min-height:36px;background:var(--surface2);color:var(--text-dim);
+border:1px solid var(--border);border-radius:6px;font-size:11px;cursor:pointer;
+display:flex;align-items:center;justify-content:center;touch-action:none;
+}
+.layer-btn.active{color:var(--accent);border-color:var(--accent)}
+.layer-btn.solo-active{color:#fa0;border-color:#fa0}
+.layer-btn.del{color:#f55}
+.step-grid{
+display:grid;grid-template-columns:repeat(16,1fr);gap:3px;
+}
+.step-cell{
+aspect-ratio:1;min-width:18px;min-height:18px;border-radius:4px;
+background:var(--surface2);border:1px solid var(--border);cursor:pointer;
+touch-action:none;position:relative;transition:background 0.1s;
+}
+.step-cell.on{background:var(--layer-color,#0ff);border-color:var(--layer-color,#0ff)}
+.step-cell.ghost{
+background:transparent;
+border:1px dashed var(--layer-color,#0ff);
+opacity:0.4;
+}
+.step-cell.ghost:hover,.step-cell.ghost:active{opacity:0.7}
+.step-cell.current{box-shadow:inset 0 0 0 2px #fff}
+.layer-controls{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.layer-slider-group{display:flex;align-items:center;gap:4px;flex:1;min-width:100px}
+.layer-slider-group label{font-size:10px;color:var(--text-dim);min-width:24px}
+.layer-slider-group input[type=range]{flex:1;height:36px;accent-color:var(--layer-color,#0ff)}
+/* SCROLLBAR */
+#layers-area::-webkit-scrollbar{width:4px}
+#layers-area::-webkit-scrollbar-track{background:var(--bg)}
+#layers-area::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px}
+/* ANIMATIONS */
+@keyframes pulse-ring{0%{transform:scale(1)}50%{transform:scale(1.03)}100%{transform:scale(1)}}
+</style>
+</head>
+<body>
+<div id="overlay">
+<button class="start-btn" id="start-btn">Tap to Start</button>
+<p>Allow microphone access to begin</p>
+</div>
+<div id="app">
+<div id="transport">
+<button class="transport-btn" id="play-btn">&#9654;</button>
+<button class="transport-btn" id="stop-btn">&#9632;</button>
+<input type="range" id="bpm-slider" min="60" max="200" value="120">
+<span id="bpm-display">120</span>
+<div class="scene-sel" id="scene-sel"></div>
+<button class="transport-btn" id="dup-scene-btn" title="Duplicate Scene">+S</button>
+<button class="transport-btn" id="room-btn">Room</button>
+<span id="room-status"></span>
+<span id="ai-status"></span>
+</div>
+<div id="center">
+<div id="metronome-ring"></div>
+<div id="beat-dots"></div>
+<button id="flow-btn">
+<span id="flow-label">Hold to Record</span>
+<span id="flow-sub">voice &rarr; synth</span>
+</button>
+<div id="step-indicator">Step: 1 / 16</div>
+</div>
+<div id="layers-area"></div>
+</div>
+<script>
+(function(){
+'use strict';
+
+// ===== PALETTE =====
+const LAYER_COLORS = [
+  '#0ff','#f0f','#0f0','#fa0','#08f','#f55','#af0','#f0a',
+  '#5ff','#ff5','#a5f','#5fa','#fa5','#5af','#af5','#f5a'
+];
+
+// ===== STATE =====
+let appState = 'INIT'; // INIT, IDLE, RECORDING, PROCESSING, PLAYING
+let currentBPM = 120;
+let currentStep = 0;
+let isPlaying = false;
+let mediaStream = null;
+let mediaRecorder = null;
+let recordedChunks = [];
+let audioContext = null;
+
+// Scene management
+let scenes = [{ id: 0, name: 'A', layers: [] }];
+let currentSceneIdx = 0;
+function currentScene() { return scenes[currentSceneIdx]; }
+
+// AI state
+let drumRNN = null;
+let melodyRNN = null;
+let aiLoading = false;
+let aiReady = false;
+
+// Room reverb
+let roomConvolver = null;
+let roomCaptured = false;
+
+// Metronome visual
+let metronomePhase = 0;
+
+// Refs
+const overlay = document.getElementById('overlay');
+const startBtn = document.getElementById('start-btn');
+const playBtn = document.getElementById('play-btn');
+const stopBtn = document.getElementById('stop-btn');
+const bpmSlider = document.getElementById('bpm-slider');
+const bpmDisplay = document.getElementById('bpm-display');
+const sceneSel = document.getElementById('scene-sel');
+const dupSceneBtn = document.getElementById('dup-scene-btn');
+const roomBtn = document.getElementById('room-btn');
+const roomStatus = document.getElementById('room-status');
+const aiStatus = document.getElementById('ai-status');
+const metronomeRing = document.getElementById('metronome-ring');
+const beatDotsEl = document.getElementById('beat-dots');
+const flowBtn = document.getElementById('flow-btn');
+const flowLabel = document.getElementById('flow-label');
+const flowSub = document.getElementById('flow-sub');
+const stepIndicator = document.getElementById('step-indicator');
+const layersArea = document.getElementById('layers-area');
+
+// ===== BEAT DOTS (16 around the ring) =====
+function createBeatDots() {
+  beatDotsEl.innerHTML = '';
+  for (let i = 0; i < 16; i++) {
+    const dot = document.createElement('div');
+    dot.className = 'beat-dot';
+    const angle = (i / 16) * Math.PI * 2 - Math.PI / 2;
+    const cx = 100 + Math.cos(angle) * 90;
+    const cy = 100 + Math.sin(angle) * 90;
+    dot.style.left = cx + 'px';
+    dot.style.top = cy + 'px';
+    dot.dataset.step = i;
+    beatDotsEl.appendChild(dot);
+  }
+}
+createBeatDots();
+
+// ===== SCENE UI =====
+function renderScenes() {
+  sceneSel.innerHTML = '';
+  scenes.forEach((s, i) => {
+    const btn = document.createElement('button');
+    btn.className = 'scene-btn' + (i === currentSceneIdx ? ' active' : '');
+    btn.textContent = s.name;
+    btn.style.touchAction = 'none';
+    btn.addEventListener('pointerdown', () => switchScene(i));
+    sceneSel.appendChild(btn);
+  });
+}
+
+function switchScene(idx) {
+  if (idx === currentSceneIdx) return;
+  currentSceneIdx = idx;
+  renderScenes();
+  renderAllLayers();
+}
+
+function duplicateScene() {
+  const src = currentScene();
+  const names = 'ABCDEFGHIJKLMNOP';
+  const newScene = {
+    id: scenes.length,
+    name: names[scenes.length] || '' + scenes.length,
+    layers: src.layers.map(l => ({
+      ...l,
+      steps: [...l.steps],
+      ghostSteps: [...l.ghostSteps],
+      synth: null,
+      muted: false,
+      solo: false,
+      volume: l.volume,
+      filterCutoff: l.filterCutoff
+    }))
+  };
+  scenes.push(newScene);
+  // Recreate synths for new scene layers
+  newScene.layers.forEach(l => {
+    createSynthForLayer(l);
+  });
+  switchScene(scenes.length - 1);
+  renderScenes();
+}
+
+dupSceneBtn.addEventListener('pointerdown', duplicateScene);
+renderScenes();
+
+// ===== BPM =====
+let bpmDebounce = null;
+bpmSlider.addEventListener('input', () => {
+  currentBPM = parseInt(bpmSlider.value);
+  bpmDisplay.textContent = currentBPM;
+  clearTimeout(bpmDebounce);
+  bpmDebounce = setTimeout(() => {
+    Tone.Transport.bpm.value = currentBPM;
+  }, 50);
+});
+
+// ===== AUDIO INIT =====
+async function initAudio() {
+  await Tone.start();
+  audioContext = Tone.context.rawContext;
+  Tone.Transport.bpm.value = currentBPM;
+  Tone.Transport.loop = true;
+  Tone.Transport.loopStart = 0;
+  Tone.Transport.loopEnd = '1m';
+  // Set up 16th note schedule
+  Tone.Transport.scheduleRepeat((time) => {
+    const step = Math.round(Tone.Transport.position.split(':').reduce((acc, v, i) => {
+      if (i === 0) return acc + parseInt(v) * 16;
+      if (i === 1) return acc + parseInt(v) * 4;
+      return acc + Math.round(parseFloat(v));
+    }, 0)) % 16;
+    currentStep = step;
+    // Play active synths
+    const scene = currentScene();
+    const hasSolo = scene.layers.some(l => l.solo);
+    scene.layers.forEach(l => {
+      if (l.muted) return;
+      if (hasSolo && !l.solo) return;
+      if (l.steps[step] && l.synth) {
+        try {
+          if (l.isPercussive) {
+            l.synth.triggerAttackRelease('16n', time);
+          } else {
+            l.synth.triggerAttackRelease(l.note || 'C4', '16n', time);
+          }
+        } catch(e) {}
+      }
+    });
+  }, '16n');
+  // Request mic
+  try {
+    mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  } catch(e) {
+    console.warn('Mic denied:', e);
+  }
+  // Setup room convolver
+  roomConvolver = Tone.context.createConvolver();
+  roomConvolver.connect(Tone.context.rawContext.destination);
+  overlay.style.display = 'none';
+  setState('IDLE');
+  startTransport();
+  loadAI();
+}
+
+function startTransport() {
+  if (!isPlaying) {
+    Tone.Transport.start();
+    isPlaying = true;
+    playBtn.classList.add('active');
+  }
+}
+
+function stopTransport() {
+  Tone.Transport.stop();
+  Tone.Transport.position = 0;
+  isPlaying = false;
+  currentStep = 0;
+  playBtn.classList.remove('active');
+}
+
+startBtn.addEventListener('pointerdown', initAudio);
+playBtn.addEventListener('pointerdown', () => { if (appState !== 'INIT') startTransport(); });
+stopBtn.addEventListener('pointerdown', () => { if (appState !== 'INIT') stopTransport(); });
+
+// ===== AI LOADING =====
+async function loadAI() {
+  if (typeof mm === 'undefined') {
+    aiStatus.textContent = 'AI: unavailable';
+    return;
+  }
+  aiLoading = true;
+  aiStatus.textContent = 'AI: loading...';
+  try {
+    drumRNN = new mm.MusicRNN('https://storage.googleapis.com/magentadata/js/checkpoints/music_rnn/drum_kit_rnn');
+    await drumRNN.initialize();
+  } catch(e) {
+    console.warn('DrumRNN failed:', e);
+    drumRNN = null;
+  }
+  try {
+    melodyRNN = new mm.MusicRNN('https://storage.googleapis.com/magentadata/js/checkpoints/music_rnn/melody_rnn');
+    await melodyRNN.initialize();
+  } catch(e) {
+    console.warn('MelodyRNN failed:', e);
+    melodyRNN = null;
+  }
+  aiLoading = false;
+  aiReady = (drumRNN !== null || melodyRNN !== null);
+  aiStatus.textContent = aiReady ? 'AI: ready' : 'AI: unavailable';
+  if (aiReady) aiStatus.style.color = '#0a0';
+}
+
+// ===== STATE =====
+function setState(s) {
+  appState = s;
+  flowBtn.classList.remove('recording', 'processing');
+  switch(s) {
+    case 'IDLE':
+      flowLabel.textContent = 'Hold to Record';
+      flowSub.textContent = 'voice \u2192 synth';
+      break;
+    case 'RECORDING':
+      flowBtn.classList.add('recording');
+      flowLabel.textContent = 'Recording...';
+      flowSub.textContent = 'release to process';
+      break;
+    case 'PROCESSING':
+      flowBtn.classList.add('processing');
+      flowLabel.textContent = 'Analyzing...';
+      flowSub.textContent = '';
+      break;
+    case 'PLAYING':
+      flowLabel.textContent = 'Hold to Record';
+      flowSub.textContent = currentScene().layers.length + ' layer(s)';
+      break;
+  }
+}
+
+// ===== RECORDING =====
+let recordingStartTime = 0;
+
+flowBtn.addEventListener('pointerdown', (e) => {
+  e.preventDefault();
+  if (appState === 'INIT') return;
+  if (!mediaStream) {
+    flowLabel.textContent = 'No mic!';
+    return;
+  }
+  startRecording();
+});
+
+flowBtn.addEventListener('pointerup', (e) => {
+  e.preventDefault();
+  if (appState === 'RECORDING') stopRecording();
+});
+flowBtn.addEventListener('pointerleave', (e) => {
+  if (appState === 'RECORDING') stopRecording();
+});
+flowBtn.addEventListener('pointercancel', (e) => {
+  if (appState === 'RECORDING') stopRecording();
+});
+
+function startRecording() {
+  setState('RECORDING');
+  recordedChunks = [];
+  // Mute playback while recording
+  currentScene().layers.forEach(l => {
+    if (l.synth) { try { l.synth.volume.value = -Infinity; } catch(e){} }
+  });
+  try {
+    mediaRecorder = new MediaRecorder(mediaStream, { mimeType: 'audio/webm;codecs=opus' });
+  } catch(e) {
+    try {
+      mediaRecorder = new MediaRecorder(mediaStream);
+    } catch(e2) {
+      setState('IDLE');
+      return;
+    }
+  }
+  mediaRecorder.ondataavailable = (e) => {
+    if (e.data.size > 0) recordedChunks.push(e.data);
+  };
+  mediaRecorder.onstop = () => {
+    processRecording();
+  };
+  recordingStartTime = performance.now();
+  mediaRecorder.start(100);
+}
+
+function stopRecording() {
+  if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+    mediaRecorder.stop();
+  }
+  // Restore volumes
+  currentScene().layers.forEach(l => {
+    if (l.synth) {
+      try { l.synth.volume.value = Tone.gainToDb(l.volume); } catch(e){}
+    }
+  });
+  setState('PROCESSING');
+}
+
+// ===== AUDIO PROCESSING =====
+async function processRecording() {
+  if (recordedChunks.length === 0) { setState(currentScene().layers.length > 0 ? 'PLAYING' : 'IDLE'); return; }
+  const blob = new Blob(recordedChunks, { type: recordedChunks[0].type || 'audio/webm' });
+  let audioBuffer;
+  try {
+    const arrayBuf = await blob.arrayBuffer();
+    audioBuffer = await audioContext.decodeAudioData(arrayBuf);
+  } catch(e) {
+    console.error('Decode failed:', e);
+    setState(currentScene().layers.length > 0 ? 'PLAYING' : 'IDLE');
+    return;
+  }
+  const channelData = audioBuffer.getChannelData(0);
+  const sampleRate = audioBuffer.sampleRate;
+
+  // 1. Detect spectral flatness -> percussive vs tonal
+  const isPercussive = analyzeSpectralFlatness(channelData, sampleRate);
+
+  // 2. Detect pitch (for tonal sounds)
+  let detectedFreq = 0;
+  let note = 'C4';
+  if (!isPercussive) {
+    detectedFreq = detectPitch(channelData, sampleRate);
+    note = quantizeToPentatonic(detectedFreq);
+  }
+
+  // 3. Detect transients and map to 16-step grid
+  const steps = detectTransients(channelData, sampleRate);
+
+  // 4. Create layer
+  const layerIdx = currentScene().layers.length;
+  const color = LAYER_COLORS[layerIdx % LAYER_COLORS.length];
+  const layer = {
+    id: Date.now(),
+    name: isPercussive ? 'Perc ' + (layerIdx+1) : 'Tone ' + (layerIdx+1),
+    isPercussive,
+    note,
+    detectedFreq,
+    steps: steps,
+    ghostSteps: new Array(16).fill(false),
+    color,
+    volume: 0.8,
+    filterCutoff: 5000,
+    muted: false,
+    solo: false,
+    synth: null,
+    filter: null
+  };
+
+  createSynthForLayer(layer);
+  currentScene().layers.push(layer);
+
+  // 5. AI suggestion
+  requestAISuggestion(layer);
+
+  renderAllLayers();
+  if (!isPlaying) startTransport();
+  setState('PLAYING');
+}
+
+// ===== SPECTRAL FLATNESS =====
+function analyzeSpectralFlatness(data, sr) {
+  // Use a portion of the audio
+  const fftSize = 2048;
+  const samples = data.slice(0, Math.min(data.length, fftSize));
+  // Compute magnitude spectrum
+  const n = fftSize;
+  const real = new Float32Array(n);
+  const imag = new Float32Array(n);
+  for (let i = 0; i < n && i < samples.length; i++) real[i] = samples[i];
+  // Simple DFT on first portion (fast enough for analysis)
+  const mags = new Float32Array(n / 2);
+  for (let k = 0; k < n / 2; k++) {
+    let re = 0, im = 0;
+    for (let t = 0; t < n; t++) {
+      const angle = (2 * Math.PI * k * t) / n;
+      re += real[t] * Math.cos(angle);
+      im -= real[t] * Math.sin(angle);
+    }
+    mags[k] = Math.sqrt(re * re + im * im) + 1e-10;
+  }
+  // Spectral flatness = geometric mean / arithmetic mean
+  let logSum = 0, linSum = 0;
+  for (let i = 1; i < mags.length; i++) {
+    logSum += Math.log(mags[i]);
+    linSum += mags[i];
+  }
+  const n2 = mags.length - 1;
+  const geoMean = Math.exp(logSum / n2);
+  const ariMean = linSum / n2;
+  const flatness = geoMean / ariMean;
+  // Threshold: > 0.3 is percussive
+  return flatness > 0.3;
+}
+
+// ===== PITCH DETECTION (YIN-style autocorrelation) =====
+function detectPitch(data, sr) {
+  const bufSize = Math.min(data.length, 4096);
+  const buf = data.slice(0, bufSize);
+  const halfSize = Math.floor(bufSize / 2);
+  const diff = new Float32Array(halfSize);
+  // Difference function
+  for (let tau = 0; tau < halfSize; tau++) {
+    let sum = 0;
+    for (let i = 0; i < halfSize; i++) {
+      const d = buf[i] - buf[i + tau];
+      sum += d * d;
+    }
+    diff[tau] = sum;
+  }
+  // Cumulative mean normalized difference
+  diff[0] = 1;
+  let runningSum = 0;
+  for (let tau = 1; tau < halfSize; tau++) {
+    runningSum += diff[tau];
+    diff[tau] = diff[tau] * tau / runningSum;
+  }
+  // Find first dip below threshold
+  const threshold = 0.2;
+  let tau = 2;
+  const minPeriod = Math.floor(sr / 800); // max 800 Hz
+  const maxPeriod = Math.floor(sr / 60);  // min 60 Hz
+  for (tau = minPeriod; tau < Math.min(halfSize, maxPeriod); tau++) {
+    if (diff[tau] < threshold) {
+      // Find local minimum
+      while (tau + 1 < halfSize && diff[tau + 1] < diff[tau]) tau++;
+      break;
+    }
+  }
+  if (tau >= halfSize || tau >= maxPeriod) return 220; // default A3
+  return sr / tau;
+}
+
+// ===== QUANTIZE TO A MINOR PENTATONIC =====
+function quantizeToPentatonic(freq) {
+  // A minor pentatonic: A, C, D, E, G across octaves
+  const noteFreqs = [];
+  const baseNotes = [
+    { name: 'A', semitone: 0 },
+    { name: 'C', semitone: 3 },
+    { name: 'D', semitone: 5 },
+    { name: 'E', semitone: 7 },
+    { name: 'G', semitone: 10 }
+  ];
+  // Generate notes from A2 to A5
+  for (let oct = 2; oct <= 5; oct++) {
+    baseNotes.forEach(n => {
+      const f = 110 * Math.pow(2, (oct - 2) + n.semitone / 12);
+      const noteName = n.name + oct;
+      noteFreqs.push({ name: noteName, freq: f });
+    });
+  }
+  // Find closest
+  let closest = noteFreqs[0];
+  let minDist = Math.abs(Math.log2(freq / closest.freq));
+  noteFreqs.forEach(nf => {
+    const dist = Math.abs(Math.log2(freq / nf.freq));
+    if (dist < minDist) { minDist = dist; closest = nf; }
+  });
+  return closest.name;
+}
+
+// ===== TRANSIENT DETECTION =====
+function detectTransients(data, sr) {
+  const steps = new Array(16).fill(false);
+  const recordingDuration = data.length / sr;
+  // Measure duration is 60/BPM * 4 (one bar)
+  const barDuration = (60 / currentBPM) * 4;
+  const stepDuration = barDuration / 16;
+
+  // Compute RMS per step-sized window
+  const rmsPerStep = [];
+  for (let s = 0; s < 16; s++) {
+    const startSample = Math.floor((s * stepDuration / recordingDuration) * data.length);
+    const endSample = Math.floor(((s + 1) * stepDuration / recordingDuration) * data.length);
+    if (startSample >= data.length) { rmsPerStep.push(0); continue; }
+    let sum = 0;
+    const end = Math.min(endSample, data.length);
+    const count = end - startSample;
+    for (let i = startSample; i < end; i++) {
+      sum += data[i] * data[i];
+    }
+    rmsPerStep.push(Math.sqrt(sum / Math.max(count, 1)));
+  }
+
+  // Find peaks above threshold
+  const maxRMS = Math.max(...rmsPerStep);
+  const threshold = maxRMS * 0.3;
+  for (let s = 0; s < 16; s++) {
+    if (rmsPerStep[s] > threshold && s * stepDuration < recordingDuration) {
+      steps[s] = true;
+    }
+  }
+
+  // Ensure at least one step is active
+  if (!steps.some(s => s)) {
+    const maxIdx = rmsPerStep.indexOf(maxRMS);
+    if (maxIdx >= 0) steps[maxIdx] = true;
+  }
+
+  return steps;
+}
+
+// ===== SYNTH CREATION =====
+function createSynthForLayer(layer) {
+  // Clean up old synth
+  if (layer.synth) { try { layer.synth.dispose(); } catch(e){} }
+  if (layer.filter) { try { layer.filter.dispose(); } catch(e){} }
+
+  layer.filter = new Tone.Filter({
+    frequency: layer.filterCutoff,
+    type: 'lowpass',
+    rolloff: -12
+  });
+
+  if (roomCaptured && roomConvolver) {
+    layer.filter.connect(roomConvolver);
+  }
+  layer.filter.toDestination();
+
+  if (layer.isPercussive) {
+    layer.synth = new Tone.NoiseSynth({
+      noise: { type: 'white' },
+      envelope: { attack: 0.001, decay: 0.15, sustain: 0 }
+    });
+  } else {
+    layer.synth = new Tone.PolySynth(Tone.Synth, {
+      oscillator: { type: 'sawtooth' },
+      envelope: { attack: 0.01, decay: 0.3, sustain: 0.4, release: 0.2 }
+    });
+  }
+
+  layer.synth.connect(layer.filter);
+  layer.synth.volume.value = Tone.gainToDb(layer.volume);
+}
+
+// ===== AI SUGGESTIONS =====
+async function requestAISuggestion(layer) {
+  if (!aiReady) return;
+
+  try {
+    if (layer.isPercussive && drumRNN) {
+      await suggestDrumPattern(layer);
+    } else if (!layer.isPercussive && melodyRNN) {
+      await suggestMelodyPattern(layer);
+    }
+    renderAllLayers();
+  } catch(e) {
+    console.warn('AI suggestion failed:', e);
+  }
+}
+
+async function suggestDrumPattern(layer) {
+  // Convert steps to NoteSequence for DrumRNN
+  const stepsPerQuarter = 4;
+  const notes = [];
+  layer.steps.forEach((on, i) => {
+    if (on) {
+      // Kick drum = MIDI 36
+      notes.push({
+        pitch: 36,
+        quantizedStartStep: i,
+        quantizedEndStep: i + 1,
+        isDrum: true
+      });
+    }
+  });
+
+  if (notes.length === 0) return;
+
+  const seq = {
+    notes: notes,
+    quantizationInfo: { stepsPerQuarter },
+    totalQuantizedSteps: 16
+  };
+
+  try {
+    const result = await drumRNN.continueSequence(seq, 16, 1.0);
+    if (result && result.notes) {
+      result.notes.forEach(n => {
+        const step = n.quantizedStartStep % 16;
+        if (!layer.steps[step]) {
+          layer.ghostSteps[step] = true;
+        }
+      });
+    }
+  } catch(e) {
+    console.warn('DrumRNN continuation failed:', e);
+  }
+}
+
+async function suggestMelodyPattern(layer) {
+  // Convert to melody NoteSequence
+  const stepsPerQuarter = 4;
+  const midiNote = Tone.Frequency(layer.note).toMidi();
+  const notes = [];
+  layer.steps.forEach((on, i) => {
+    if (on) {
+      notes.push({
+        pitch: midiNote,
+        quantizedStartStep: i,
+        quantizedEndStep: i + 1
+      });
+    }
+  });
+
+  if (notes.length === 0) return;
+
+  const seq = {
+    notes: notes,
+    quantizationInfo: { stepsPerQuarter },
+    totalQuantizedSteps: 16
+  };
+
+  try {
+    const result = await melodyRNN.continueSequence(seq, 16, 1.1);
+    if (result && result.notes) {
+      result.notes.forEach(n => {
+        const step = n.quantizedStartStep % 16;
+        if (!layer.steps[step]) {
+          layer.ghostSteps[step] = true;
+        }
+      });
+    }
+  } catch(e) {
+    console.warn('MelodyRNN continuation failed:', e);
+  }
+}
+
+// ===== ROOM REVERB CAPTURE =====
+roomBtn.addEventListener('pointerdown', captureRoom);
+
+async function captureRoom() {
+  if (!mediaStream) { roomStatus.textContent = 'No mic'; roomStatus.style.display = 'inline'; return; }
+  roomBtn.classList.add('active');
+  roomBtn.textContent = 'Clap!';
+
+  const recorder = new MediaRecorder(mediaStream);
+  const chunks = [];
+  recorder.ondataavailable = e => { if (e.data.size > 0) chunks.push(e.data); };
+
+  recorder.start();
+  await new Promise(r => setTimeout(r, 2000));
+  recorder.stop();
+
+  await new Promise(r => { recorder.onstop = r; });
+
+  roomBtn.textContent = 'Room';
+  roomBtn.classList.remove('active');
+
+  try {
+    const blob = new Blob(chunks, { type: chunks[0].type || 'audio/webm' });
+    const arrayBuf = await blob.arrayBuffer();
+    const audioBuf = await audioContext.decodeAudioData(arrayBuf);
+
+    // Use the recorded audio as a crude impulse response
+    // Normalize it and apply a fade-in to reduce the direct signal
+    const irLength = audioBuf.length;
+    const irBuffer = audioContext.createBuffer(1, irLength, audioBuf.sampleRate);
+    const irData = irBuffer.getChannelData(0);
+    const srcData = audioBuf.getChannelData(0);
+
+    // Find the loudest peak (the clap)
+    let peakIdx = 0;
+    let peakVal = 0;
+    for (let i = 0; i < srcData.length; i++) {
+      if (Math.abs(srcData[i]) > peakVal) {
+        peakVal = Math.abs(srcData[i]);
+        peakIdx = i;
+      }
+    }
+
+    // Copy from just after the peak (the reverb tail)
+    const tailStart = Math.min(peakIdx + Math.floor(audioBuf.sampleRate * 0.01), irLength);
+    for (let i = tailStart; i < irLength; i++) {
+      // Apply exponential decay envelope
+      const t = (i - tailStart) / (irLength - tailStart);
+      irData[i - tailStart] = srcData[i] * Math.exp(-3 * t) / (peakVal || 1);
+    }
+
+    roomConvolver.buffer = irBuffer;
+    roomCaptured = true;
+
+    // Reconnect all layer filters through convolver
+    currentScene().layers.forEach(l => {
+      if (l.filter) {
+        try {
+          l.filter.disconnect();
+          l.filter.connect(roomConvolver);
+          l.filter.toDestination();
+        } catch(e) {}
+      }
+    });
+
+    roomStatus.textContent = 'Room captured \u2713';
+    roomStatus.style.display = 'inline';
+    roomStatus.style.color = '#0a0';
+  } catch(e) {
+    console.error('Room capture failed:', e);
+    roomStatus.textContent = 'Failed';
+    roomStatus.style.display = 'inline';
+    roomStatus.style.color = '#f55';
+  }
+}
+
+// ===== LAYER RENDERING =====
+function renderAllLayers() {
+  layersArea.innerHTML = '';
+  const scene = currentScene();
+  scene.layers.forEach((layer, idx) => {
+    const strip = document.createElement('div');
+    strip.className = 'layer-strip';
+    strip.style.setProperty('--layer-color', layer.color);
+
+    // Header row
+    const header = document.createElement('div');
+    header.className = 'layer-header';
+
+    const colorDot = document.createElement('div');
+    colorDot.className = 'layer-color';
+    colorDot.style.background = layer.color;
+    header.appendChild(colorDot);
+
+    const nameEl = document.createElement('div');
+    nameEl.className = 'layer-name';
+    nameEl.textContent = layer.name;
+    nameEl.style.color = layer.color;
+    header.appendChild(nameEl);
+
+    const typeEl = document.createElement('div');
+    typeEl.className = 'layer-type';
+    typeEl.textContent = layer.isPercussive ? 'PERC' : layer.note;
+    header.appendChild(typeEl);
+
+    const muteBtn = document.createElement('button');
+    muteBtn.className = 'layer-btn' + (layer.muted ? ' active' : '');
+    muteBtn.textContent = 'M';
+    muteBtn.style.touchAction = 'none';
+    muteBtn.addEventListener('pointerdown', () => {
+      layer.muted = !layer.muted;
+      if (layer.synth) {
+        layer.synth.volume.value = layer.muted ? -Infinity : Tone.gainToDb(layer.volume);
+      }
+      muteBtn.classList.toggle('active', layer.muted);
+    });
+    header.appendChild(muteBtn);
+
+    const soloBtn = document.createElement('button');
+    soloBtn.className = 'layer-btn' + (layer.solo ? ' solo-active' : '');
+    soloBtn.textContent = 'S';
+    soloBtn.style.touchAction = 'none';
+    soloBtn.addEventListener('pointerdown', () => {
+      layer.solo = !layer.solo;
+      renderAllLayers();
+    });
+    header.appendChild(soloBtn);
+
+    const delBtn = document.createElement('button');
+    delBtn.className = 'layer-btn del';
+    delBtn.textContent = '\u00D7';
+    delBtn.style.touchAction = 'none';
+    delBtn.addEventListener('pointerdown', () => {
+      if (layer.synth) { try { layer.synth.dispose(); } catch(e){} }
+      if (layer.filter) { try { layer.filter.dispose(); } catch(e){} }
+      scene.layers.splice(idx, 1);
+      renderAllLayers();
+      if (scene.layers.length === 0) setState('IDLE');
+    });
+    header.appendChild(delBtn);
+
+    strip.appendChild(header);
+
+    // Step grid
+    const grid = document.createElement('div');
+    grid.className = 'step-grid';
+    for (let s = 0; s < 16; s++) {
+      const cell = document.createElement('div');
+      cell.className = 'step-cell';
+      cell.style.touchAction = 'none';
+      cell.dataset.step = s;
+      if (layer.steps[s]) {
+        cell.classList.add('on');
+        cell.style.background = layer.color;
+        cell.style.borderColor = layer.color;
+      } else if (layer.ghostSteps[s]) {
+        cell.classList.add('ghost');
+        cell.style.borderColor = layer.color;
+      }
+      if (s === currentStep) cell.classList.add('current');
+      cell.addEventListener('pointerdown', (e) => {
+        e.preventDefault();
+        if (layer.steps[s]) {
+          // Remove step
+          layer.steps[s] = false;
+          cell.classList.remove('on');
+          cell.style.background = '';
+          cell.style.borderColor = 'var(--border)';
+        } else if (layer.ghostSteps[s]) {
+          // Accept ghost step
+          layer.ghostSteps[s] = false;
+          layer.steps[s] = true;
+          cell.classList.remove('ghost');
+          cell.classList.add('on');
+          cell.style.background = layer.color;
+          cell.style.borderColor = layer.color;
+          cell.style.opacity = '1';
+        } else {
+          // Add new step
+          layer.steps[s] = true;
+          cell.classList.add('on');
+          cell.style.background = layer.color;
+          cell.style.borderColor = layer.color;
+        }
+      });
+      grid.appendChild(cell);
+    }
+    strip.appendChild(grid);
+
+    // Controls row
+    const controls = document.createElement('div');
+    controls.className = 'layer-controls';
+
+    // Volume
+    const volGroup = document.createElement('div');
+    volGroup.className = 'layer-slider-group';
+    const volLabel = document.createElement('label');
+    volLabel.textContent = 'Vol';
+    const volSlider = document.createElement('input');
+    volSlider.type = 'range';
+    volSlider.min = '0';
+    volSlider.max = '100';
+    volSlider.value = Math.round(layer.volume * 100);
+    volSlider.style.accentColor = layer.color;
+    let volDebounce = null;
+    volSlider.addEventListener('input', () => {
+      clearTimeout(volDebounce);
+      volDebounce = setTimeout(() => {
+        layer.volume = parseInt(volSlider.value) / 100;
+        if (layer.synth && !layer.muted) {
+          layer.synth.volume.value = Tone.gainToDb(layer.volume);
+        }
+      }, 30);
+    });
+    volGroup.appendChild(volLabel);
+    volGroup.appendChild(volSlider);
+    controls.appendChild(volGroup);
+
+    // Filter cutoff
+    const filtGroup = document.createElement('div');
+    filtGroup.className = 'layer-slider-group';
+    const filtLabel = document.createElement('label');
+    filtLabel.textContent = 'Flt';
+    const filtSlider = document.createElement('input');
+    filtSlider.type = 'range';
+    filtSlider.min = '100';
+    filtSlider.max = '10000';
+    filtSlider.value = layer.filterCutoff;
+    filtSlider.style.accentColor = layer.color;
+    let filtDebounce = null;
+    filtSlider.addEventListener('input', () => {
+      clearTimeout(filtDebounce);
+      filtDebounce = setTimeout(() => {
+        layer.filterCutoff = parseInt(filtSlider.value);
+        if (layer.filter) {
+          layer.filter.frequency.value = layer.filterCutoff;
+        }
+      }, 30);
+    });
+    filtGroup.appendChild(filtLabel);
+    filtGroup.appendChild(filtSlider);
+    controls.appendChild(filtGroup);
+
+    strip.appendChild(controls);
+    layersArea.appendChild(strip);
+  });
+}
+
+// ===== VISUAL UPDATE LOOP =====
+function updateVisuals() {
+  requestAnimationFrame(updateVisuals);
+
+  // Metronome ring pulse
+  if (isPlaying) {
+    const beatDuration = 60 / currentBPM;
+    const now = Tone.Transport.seconds;
+    const beatPhase = (now % beatDuration) / beatDuration;
+    if (beatPhase < 0.1) {
+      metronomeRing.classList.add('pulse');
+    } else {
+      metronomeRing.classList.remove('pulse');
+    }
+  } else {
+    metronomeRing.classList.remove('pulse');
+  }
+
+  // Beat dots
+  const dots = beatDotsEl.querySelectorAll('.beat-dot');
+  dots.forEach((dot, i) => {
+    dot.classList.toggle('active', i === currentStep);
+  });
+
+  // Step indicator
+  stepIndicator.textContent = 'Step: ' + (currentStep + 1) + ' / 16';
+
+  // Update current step highlight on layer grids
+  const cells = layersArea.querySelectorAll('.step-cell');
+  cells.forEach(cell => {
+    const step = parseInt(cell.dataset.step);
+    cell.classList.toggle('current', step === currentStep);
+  });
+}
+requestAnimationFrame(updateVisuals);
+
+})();
+</script>
+</body>
+</html>
