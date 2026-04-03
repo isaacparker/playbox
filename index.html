@@ -359,7 +359,6 @@ const sceneSel = document.getElementById('scene-sel');
 const dupSceneBtn = document.getElementById('dup-scene-btn');
 const roomBtn = document.getElementById('room-btn');
 const scaleBadge = document.getElementById('scale-badge');
-const roomStatus = document.getElementById('room-status');
 const roomMixSlider = document.getElementById('room-mix-slider');
 const beatRing = document.getElementById('beat-ring');
 const pulseWave = document.getElementById('pulse-wave');
@@ -693,8 +692,9 @@ startBtn.addEventListener('click', initAudio);
 playBtn.addEventListener('pointerdown', () => { if (appState !== 'INIT') startTransport(); });
 stopBtn.addEventListener('pointerdown', () => { if (appState !== 'INIT') stopTransport(); });
 
-// Auto-skip overlay if mic permission already granted
-if (navigator.permissions && navigator.permissions.query) {
+// Auto-skip overlay if mic permission already granted (not on iOS — needs gesture)
+const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+if (!isIOS && navigator.permissions && navigator.permissions.query) {
   navigator.permissions.query({ name: 'microphone' }).then(result => {
     if (result.state === 'granted') initAudio();
   }).catch(() => {});
@@ -1438,7 +1438,7 @@ roomMixSlider.addEventListener('input', () => {
 });
 
 async function captureRoom() {
-  if (!mediaStream) { roomStatus.textContent = 'No mic'; roomStatus.style.display = 'inline'; return; }
+  if (!mediaStream) { roomBtn.textContent = 'No mic'; return; }
   roomBtn.classList.add('active');
   roomBtn.textContent = 'Clap!';
 
@@ -1505,9 +1505,8 @@ async function captureRoom() {
     roomMixSlider.style.display = 'block';
   } catch(e) {
     console.error('Room capture failed:', e);
-    roomStatus.textContent = 'Failed';
-    roomStatus.style.display = 'inline';
-    roomStatus.style.color = '#f55';
+    roomBtn.textContent = 'Fail';
+    roomBtn.style.color = '#f55';
   }
 }
 
