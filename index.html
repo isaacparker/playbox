@@ -86,6 +86,7 @@ position:absolute;width:300px;height:300px;pointer-events:none;
 }
 #beat-ring .seg-bg{fill:rgba(0,255,255,0.12);stroke:none;transition:fill 0.08s}
 #beat-ring .seg-bg.active{fill:rgba(0,255,255,1)}
+#beat-ring .seg-bg.rec-filled{fill:rgba(255,50,50,0.7)}
 #beat-ring .divider{stroke:var(--accent);stroke-width:1}
 #beat-ring .ring-edge{fill:none;stroke:var(--accent);stroke-width:1}
 #pulse-wave{
@@ -782,9 +783,30 @@ flowBtn.addEventListener('pointercancel', (e) => {
   if (appState === 'RECORDING') stopRecording();
 });
 
+let recAnalyser = null;
+let recFilledSteps = new Array(16).fill(false);
+let recLastStep = -1;
+
+function clearRecRing() {
+  recFilledSteps = new Array(16).fill(false);
+  recLastStep = -1;
+  beatRing.querySelectorAll('.seg-bg').forEach(seg => seg.classList.remove('rec-filled'));
+}
+
 function startRecording() {
   setState('RECORDING');
   recordedChunks = [];
+  clearRecRing();
+
+  // Set up real-time mic analyser for ring feedback
+  if (mediaStream && audioContext) {
+    try {
+      const src = audioContext.createMediaStreamSource(mediaStream);
+      recAnalyser = audioContext.createAnalyser();
+      recAnalyser.fftSize = 256;
+      src.connect(recAnalyser);
+    } catch(e) { recAnalyser = null; }
+  }
   // Mute all playback while recording (prevents speaker bleed into mic)
   currentScene().layers.forEach(l => {
     if (l.synth) { try { l.synth.volume.value = -Infinity; } catch(e){} }
@@ -2163,8 +2185,23 @@ function updateVisuals() {
 
   // Beat ring segments
   const segs = beatRing.querySelectorAll('.seg-bg');
+
+  // During recording, fill segments when mic picks up sound
+  if (appState === 'RECORDING' && recAnalyser && currentStep !== recLastStep) {
+    recLastStep = currentStep;
+    const buf = new Uint8Array(recAnalyser.frequencyBinCount);
+    recAnalyser.getByteTimeDomainData(buf);
+    let sum = 0;
+    for (let i = 0; i < buf.length; i++) { const v = (buf[i] - 128) / 128; sum += v * v; }
+    const rms = Math.sqrt(sum / buf.length);
+    if (rms > 0.05) {
+      recFilledSteps[currentStep] = true;
+    }
+  }
+
   segs.forEach((seg, i) => {
-    seg.classList.toggle('active', i === currentStep);
+    seg.classList.toggle('active', i === currentStep && appState !== 'RECORDING');
+    seg.classList.toggle('rec-filled', recFilledSteps[i]);
   });
 
   // Step indicator
