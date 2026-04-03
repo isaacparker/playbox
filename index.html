@@ -98,6 +98,18 @@ animation:pulse-expand 0.8s ease-out forwards;
 0%{opacity:0.7;transform:scale(1)}
 100%{opacity:0;transform:scale(1.8)}
 }
+#pulse-tick{
+position:absolute;width:300px;height:300px;border-radius:50%;
+border:1px solid var(--accent);opacity:0;pointer-events:none;
+transform:scale(1);
+}
+#pulse-tick.animate{
+animation:pulse-tick-expand 0.4s ease-out forwards;
+}
+@keyframes pulse-tick-expand{
+0%{opacity:0.3;transform:scale(1)}
+100%{opacity:0;transform:scale(1.2)}
+}
 #flow-btn{
 position:relative;z-index:10;width:200px;height:200px;border-radius:50%;
 background:radial-gradient(circle,#111 0%,#0a0a0a 100%);
@@ -270,6 +282,7 @@ min-height:32px;display:flex;align-items:center;
 </div>
 <div id="center">
 <div id="pulse-wave"></div>
+<div id="pulse-tick"></div>
 <svg id="beat-ring" viewBox="0 0 300 300"></svg>
 <div id="intent-ring"></div>
 <button id="flow-btn">
@@ -340,6 +353,7 @@ const roomStatus = document.getElementById('room-status');
 const roomMixSlider = document.getElementById('room-mix-slider');
 const beatRing = document.getElementById('beat-ring');
 const pulseWave = document.getElementById('pulse-wave');
+const pulseTick = document.getElementById('pulse-tick');
 const flowBtn = document.getElementById('flow-btn');
 const flowLabel = document.getElementById('flow-label');
 const flowSub = document.getElementById('flow-sub');
@@ -2065,14 +2079,23 @@ function renderAllLayers() {
 function updateVisuals() {
   requestAnimationFrame(updateVisuals);
 
-  // Pulse wave on beat 1
+  // Pulse wave on beat 1 (big) and beats 2-4 (small tick)
   if (isPlaying && currentStep === 0 && !pulseWave._fired) {
     pulseWave._fired = true;
     pulseWave.classList.remove('animate');
-    void pulseWave.offsetWidth; // force reflow
+    void pulseWave.offsetWidth;
     pulseWave.classList.add('animate');
   }
   if (currentStep !== 0) pulseWave._fired = false;
+
+  const isQuarter = currentStep === 4 || currentStep === 8 || currentStep === 12;
+  if (isPlaying && isQuarter && !pulseTick._fired) {
+    pulseTick._fired = true;
+    pulseTick.classList.remove('animate');
+    void pulseTick.offsetWidth;
+    pulseTick.classList.add('animate');
+  }
+  if (!isQuarter) pulseTick._fired = false;
 
   // Beat ring segments
   const segs = beatRing.querySelectorAll('.seg-bg');
