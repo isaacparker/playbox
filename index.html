@@ -326,12 +326,12 @@ const intentRing = document.getElementById('intent-ring');
 
 // ===== SOUND INTENT =====
 const INTENTS = [
-  { id: 'kick',  label: 'Kick',  perc: true,  osc: 'brown', attack: 0.001, decay: 0.2,  sustain: 0, release: 0, filter: 800,  q: 2 },
-  { id: 'snare', label: 'Snare', perc: true,  osc: 'white', attack: 0.001, decay: 0.12, sustain: 0, release: 0, filter: 5000, q: 1 },
-  { id: 'hat',   label: 'Hat',   perc: true,  osc: 'white', attack: 0.001, decay: 0.05, sustain: 0, release: 0, filter: 8000, q: 1 },
-  { id: 'bass',  label: 'Bass',  perc: false, osc: 'square',   attack: 0.01, decay: 0.3,  sustain: 0.6, release: 0.1, filter: 1200, q: 2 },
-  { id: 'lead',  label: 'Lead',  perc: false, osc: 'sawtooth', attack: 0.01, decay: 0.2,  sustain: 0.5, release: 0.2, filter: 6000, q: 1 },
-  { id: 'pad',   label: 'Pad',   perc: false, osc: 'sine',     attack: 0.3,  decay: 0.5,  sustain: 0.7, release: 0.5, filter: 3000, q: 0.5 },
+  { id: 'kick',  label: 'Kick',  perc: true,  osc: 'brown', attack: 0.001, decay: 0.25, sustain: 0, release: 0, filter: 600,  q: 4,   drive: 0.3, filtEnv: 8000 },
+  { id: 'snare', label: 'Snare', perc: true,  osc: 'white', attack: 0.001, decay: 0.15, sustain: 0, release: 0, filter: 3000, q: 1.5, drive: 0.2, filtEnv: 6000 },
+  { id: 'hat',   label: 'Hat',   perc: true,  osc: 'white', attack: 0.001, decay: 0.04, sustain: 0, release: 0, filter: 9000, q: 1,   drive: 0,   filtEnv: 0 },
+  { id: 'bass',  label: 'Bass',  perc: false, osc: 'square',   attack: 0.005, decay: 0.2,  sustain: 0.7, release: 0.08, filter: 800,  q: 3, drive: 0.25, filtEnv: 3000 },
+  { id: 'lead',  label: 'Lead',  perc: false, osc: 'sawtooth', attack: 0.005, decay: 0.15, sustain: 0.6, release: 0.15, filter: 4000, q: 2, drive: 0.15, filtEnv: 5000 },
+  { id: 'pad',   label: 'Pad',   perc: false, osc: 'sine',     attack: 0.3,   decay: 0.5,  sustain: 0.8, release: 0.6,  filter: 2000, q: 0.5, drive: 0, filtEnv: 2000 },
 ];
 let selectedIntent = null;
 
@@ -521,10 +521,25 @@ async function initAudio() {
         if (hasSolo && !l.solo) return;
         if (l.steps[step] && l.synth) {
           try {
+            // Filter envelope sweep
+            if (l.filter && l.filtEnvAmount > 0) {
+              const peak = l.filterCutoff + l.filtEnvAmount;
+              l.filter.frequency.cancelScheduledValues(time);
+              l.filter.frequency.setValueAtTime(peak, time);
+              l.filter.frequency.exponentialRampToValueAtTime(
+                Math.max(20, l.filterCutoff), time + (l.envDecay || 0.1)
+              );
+            }
             if (l.isPercussive) {
               l.synth.triggerAttackRelease('16n', time);
             } else {
-              l.synth.triggerAttackRelease(getPlaybackNote(l) || 'C4', '16n', time);
+              const pn = getPlaybackNote(l) || 'C4';
+              l.synth.triggerAttackRelease(pn, '16n', time);
+              if (l.synth2) l.synth2.triggerAttackRelease(pn, '16n', time);
+              if (l.subOsc) {
+                const subNote = Tone.Frequency(pn).transpose(-12).toNote();
+                l.subOsc.triggerAttackRelease(subNote, '16n', time);
+              }
             }
           } catch(e) {}
         }
@@ -720,6 +735,7 @@ async function processRecording() {
 
   let isPercussive, detectedFreq = 0, note = 'A3';
   let oscType, filterCutoff, filterQ, envAttack, envDecay, envSustain, envRelease, layerName;
+  let driveAmount = 0, filtEnvAmount = 0;
 
   if (intent) {
     // User declared intent — use preset synth params, still detect pitch/rhythm from audio
@@ -731,6 +747,8 @@ async function processRecording() {
     envDecay = intent.decay;
     envSustain = intent.sustain;
     envRelease = intent.release;
+    driveAmount = intent.drive || 0;
+    filtEnvAmount = intent.filtEnv || 0;
 
     if (!isPercussive) {
       detectedFreq = detectPitch(channelData, sampleRate);
@@ -785,6 +803,7 @@ async function processRecording() {
     volume: 0.8,
     filterCutoff,
     filterQ: filterQ || 1,
+    filtEnvAmount: filtEnvAmount || 0,
     muted: false,
     solo: false,
     oscType,
@@ -792,9 +811,13 @@ async function processRecording() {
     envDecay,
     envSustain,
     envRelease,
+    driveAmount: driveAmount || 0,
     octave: 0,
     synthOpen: false,
     synth: null,
+    synth2: null,
+    subOsc: null,
+    drive: null,
     filter: null
   };
 
@@ -912,42 +935,69 @@ function quantizeToNote(freq) {
   return name + oct;
 }
 
-// ===== TRANSIENT DETECTION =====
+// ===== TRANSIENT DETECTION (onset-based) =====
 function detectTransients(data, sr) {
   const steps = new Array(16).fill(false);
-  const recordingDuration = data.length / sr;
-  // Measure duration is 60/BPM * 4 (one bar)
   const barDuration = (60 / currentBPM) * 4;
   const stepDuration = barDuration / 16;
+  const recordingDuration = data.length / sr;
 
-  // Compute RMS per step-sized window
-  const rmsPerStep = [];
-  for (let s = 0; s < 16; s++) {
-    const startSample = Math.floor((s * stepDuration / recordingDuration) * data.length);
-    const endSample = Math.floor(((s + 1) * stepDuration / recordingDuration) * data.length);
-    if (startSample >= data.length) { rmsPerStep.push(0); continue; }
+  // 1. Compute energy envelope with small hop
+  const hopSize = Math.floor(sr * 0.005); // 5ms hops
+  const frameSize = Math.floor(sr * 0.01); // 10ms frames
+  const numFrames = Math.floor((data.length - frameSize) / hopSize);
+  const energy = new Float32Array(numFrames);
+  for (let f = 0; f < numFrames; f++) {
     let sum = 0;
-    const end = Math.min(endSample, data.length);
-    const count = end - startSample;
-    for (let i = startSample; i < end; i++) {
+    const start = f * hopSize;
+    for (let i = start; i < start + frameSize && i < data.length; i++) {
       sum += data[i] * data[i];
     }
-    rmsPerStep.push(Math.sqrt(sum / Math.max(count, 1)));
+    energy[f] = sum / frameSize;
   }
 
-  // Find peaks above threshold
-  const maxRMS = Math.max(...rmsPerStep);
-  const threshold = maxRMS * 0.3;
-  for (let s = 0; s < 16; s++) {
-    if (rmsPerStep[s] > threshold && s * stepDuration < recordingDuration) {
-      steps[s] = true;
+  // 2. Compute spectral flux (energy derivative) — detect onsets
+  const flux = new Float32Array(numFrames);
+  for (let f = 1; f < numFrames; f++) {
+    const diff = energy[f] - energy[f - 1];
+    flux[f] = diff > 0 ? diff : 0; // half-wave rectify
+  }
+
+  // 3. Adaptive threshold: median + factor
+  const sorted = Array.from(flux).sort((a, b) => a - b);
+  const median = sorted[Math.floor(sorted.length * 0.75)] || 0;
+  const threshold = median * 3 + 0.0001;
+
+  // 4. Find onset times
+  const onsets = [];
+  const minGapFrames = Math.floor(stepDuration * 0.4 * sr / hopSize); // min gap between onsets
+  let lastOnset = -minGapFrames;
+  for (let f = 1; f < numFrames; f++) {
+    if (flux[f] > threshold && (f - lastOnset) >= minGapFrames) {
+      const timeSec = (f * hopSize) / sr;
+      if (timeSec < barDuration) {
+        onsets.push(timeSec);
+        lastOnset = f;
+      }
     }
   }
 
-  // Ensure at least one step is active
+  // 5. Quantize each onset to nearest step
+  onsets.forEach(t => {
+    const stepFloat = t / stepDuration;
+    const step = Math.round(stepFloat) % 16;
+    steps[step] = true;
+  });
+
+  // Ensure at least one step
   if (!steps.some(s => s)) {
-    const maxIdx = rmsPerStep.indexOf(maxRMS);
-    if (maxIdx >= 0) steps[maxIdx] = true;
+    // Fall back to loudest region
+    let maxE = 0, maxIdx = 0;
+    for (let f = 0; f < numFrames; f++) {
+      if (energy[f] > maxE) { maxE = energy[f]; maxIdx = f; }
+    }
+    const t = (maxIdx * hopSize) / sr;
+    steps[Math.round(t / stepDuration) % 16] = true;
   }
 
   return steps;
@@ -962,19 +1012,42 @@ function getPlaybackNote(layer) {
   return name + Math.max(0, Math.min(8, oct));
 }
 
+// ===== DRIVE CURVE =====
+function makeDriveCurve(amount) {
+  const k = amount * 50;
+  const samples = 256;
+  const curve = new Float32Array(samples);
+  for (let i = 0; i < samples; i++) {
+    const x = (i * 2) / samples - 1;
+    curve[i] = k > 0 ? ((1 + k) * x) / (1 + k * Math.abs(x)) : x;
+  }
+  return curve;
+}
+
 // ===== SYNTH CREATION =====
 function createSynthForLayer(layer) {
-  // Clean up old synth
+  // Clean up old nodes
   if (layer.synth) { try { layer.synth.dispose(); } catch(e){} }
+  if (layer.synth2) { try { layer.synth2.dispose(); } catch(e){} }
+  if (layer.subOsc) { try { layer.subOsc.dispose(); } catch(e){} }
   if (layer.filter) { try { layer.filter.dispose(); } catch(e){} }
+  if (layer.drive) { try { layer.drive.dispose(); } catch(e){} }
+  layer.synth2 = null;
+  layer.subOsc = null;
 
+  // Drive (waveshaper distortion)
+  layer.drive = new Tone.WaveShaper(makeDriveCurve(layer.driveAmount || 0));
+
+  // Filter
   layer.filter = new Tone.Filter({
     frequency: layer.filterCutoff,
     Q: layer.filterQ || 1,
     type: 'lowpass',
-    rolloff: -12
+    rolloff: -24
   });
 
+  // Chain: drive -> filter -> output
+  layer.drive.connect(layer.filter);
   if (roomCaptured && roomConvolver) {
     layer.filter.connect(roomConvolver);
   }
@@ -985,18 +1058,36 @@ function createSynthForLayer(layer) {
       noise: { type: layer.oscType || 'white' },
       envelope: { attack: layer.envAttack, decay: layer.envDecay, sustain: layer.envSustain }
     });
+    layer.synth.connect(layer.drive);
   } else {
+    // Main oscillator
     layer.synth = new Tone.Synth({
       oscillator: { type: layer.oscType || 'sawtooth' },
       envelope: { attack: layer.envAttack, decay: layer.envDecay, sustain: layer.envSustain, release: layer.envRelease }
     });
+    layer.synth.connect(layer.drive);
+
+    // Detuned second oscillator for thickness
+    layer.synth2 = new Tone.Synth({
+      oscillator: { type: layer.oscType || 'sawtooth', detune: 12 },
+      envelope: { attack: layer.envAttack, decay: layer.envDecay, sustain: layer.envSustain, release: layer.envRelease }
+    });
+    layer.synth2.connect(layer.drive);
+    layer.synth2.volume.value = -6;
+
+    // Sub oscillator (one octave down, sine) for body
+    layer.subOsc = new Tone.Synth({
+      oscillator: { type: 'sine' },
+      envelope: { attack: layer.envAttack, decay: layer.envDecay * 1.5, sustain: layer.envSustain, release: layer.envRelease * 1.2 }
+    });
+    layer.subOsc.connect(layer.drive);
+    layer.subOsc.volume.value = -10;
   }
 
-  layer.synth.connect(layer.filter);
   layer.synth.volume.value = Tone.gainToDb(layer.volume);
 }
 
-// Update synth params without full rebuild (avoids audio glitches)
+// Update synth params without full rebuild
 function updateSynthParams(layer) {
   if (!layer.synth) return;
   try {
@@ -1006,13 +1097,13 @@ function updateSynthParams(layer) {
         envelope: { attack: layer.envAttack, decay: layer.envDecay, sustain: layer.envSustain }
       });
     } else {
-      layer.synth.set({
-        oscillator: { type: layer.oscType || 'sawtooth' },
-        envelope: { attack: layer.envAttack, decay: layer.envDecay, sustain: layer.envSustain, release: layer.envRelease }
-      });
+      const envObj = { attack: layer.envAttack, decay: layer.envDecay, sustain: layer.envSustain, release: layer.envRelease };
+      layer.synth.set({ oscillator: { type: layer.oscType || 'sawtooth' }, envelope: envObj });
+      if (layer.synth2) layer.synth2.set({ oscillator: { type: layer.oscType || 'sawtooth', detune: 12 }, envelope: envObj });
+      if (layer.subOsc) layer.subOsc.set({ envelope: { attack: layer.envAttack, decay: layer.envDecay * 1.5, sustain: layer.envSustain, release: layer.envRelease * 1.2 } });
     }
+    if (layer.drive) layer.drive.curve = makeDriveCurve(layer.driveAmount || 0);
   } catch(e) {
-    // Fallback: full rebuild if .set() fails
     createSynthForLayer(layer);
   }
 }
@@ -1265,6 +1356,9 @@ function renderAllLayers() {
     delBtn.style.touchAction = 'none';
     delBtn.addEventListener('pointerdown', () => {
       if (layer.synth) { try { layer.synth.dispose(); } catch(e){} }
+      if (layer.synth2) { try { layer.synth2.dispose(); } catch(e){} }
+      if (layer.subOsc) { try { layer.subOsc.dispose(); } catch(e){} }
+      if (layer.drive) { try { layer.drive.dispose(); } catch(e){} }
       if (layer.filter) { try { layer.filter.dispose(); } catch(e){} }
       scene.layers.splice(idx, 1);
       renderAllLayers();
@@ -1496,7 +1590,69 @@ function renderAllLayers() {
     resRow.appendChild(resSlider);
     resRow.appendChild(resVal);
     filtGroup.appendChild(resRow);
+
+    // Filter envelope amount
+    const filtEnvRow = document.createElement('div');
+    filtEnvRow.className = 'synth-row';
+    const filtEnvLbl = document.createElement('label');
+    filtEnvLbl.textContent = 'Env';
+    const filtEnvSlider = document.createElement('input');
+    filtEnvSlider.type = 'range';
+    filtEnvSlider.min = '0';
+    filtEnvSlider.max = '10000';
+    filtEnvSlider.step = '100';
+    filtEnvSlider.value = layer.filtEnvAmount || 0;
+    filtEnvSlider.style.accentColor = layer.color;
+    const filtEnvVal = document.createElement('span');
+    filtEnvVal.className = 'val';
+    filtEnvVal.textContent = layer.filtEnvAmount || 0;
+    filtEnvSlider.addEventListener('input', () => {
+      filtEnvVal.textContent = filtEnvSlider.value;
+      layer.filtEnvAmount = parseInt(filtEnvSlider.value);
+    });
+    filtEnvRow.appendChild(filtEnvLbl);
+    filtEnvRow.appendChild(filtEnvSlider);
+    filtEnvRow.appendChild(filtEnvVal);
+    filtGroup.appendChild(filtEnvRow);
+
     synthPanel.appendChild(filtGroup);
+
+    // --- Drive group ---
+    const driveGroup = document.createElement('div');
+    driveGroup.className = 'synth-group';
+    const driveGroupLabel = document.createElement('div');
+    driveGroupLabel.className = 'synth-group-label';
+    driveGroupLabel.textContent = 'Drive';
+    driveGroup.appendChild(driveGroupLabel);
+
+    const driveRow = document.createElement('div');
+    driveRow.className = 'synth-row';
+    const driveLbl = document.createElement('label');
+    driveLbl.textContent = 'Amt';
+    const driveSlider = document.createElement('input');
+    driveSlider.type = 'range';
+    driveSlider.min = '0';
+    driveSlider.max = '100';
+    driveSlider.step = '1';
+    driveSlider.value = Math.round((layer.driveAmount || 0) * 100);
+    driveSlider.style.accentColor = layer.color;
+    const driveVal = document.createElement('span');
+    driveVal.className = 'val';
+    driveVal.textContent = Math.round((layer.driveAmount || 0) * 100) + '%';
+    let driveDebounce = null;
+    driveSlider.addEventListener('input', () => {
+      driveVal.textContent = driveSlider.value + '%';
+      clearTimeout(driveDebounce);
+      driveDebounce = setTimeout(() => {
+        layer.driveAmount = parseInt(driveSlider.value) / 100;
+        if (layer.drive) layer.drive.curve = makeDriveCurve(layer.driveAmount);
+      }, 30);
+    });
+    driveRow.appendChild(driveLbl);
+    driveRow.appendChild(driveSlider);
+    driveRow.appendChild(driveVal);
+    driveGroup.appendChild(driveRow);
+    synthPanel.appendChild(driveGroup);
 
     strip.appendChild(synthPanel);
 
