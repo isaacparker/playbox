@@ -303,23 +303,7 @@ function createBeatSegments() {
   var ns = 'http://www.w3.org/2000/svg';
   var cx = 110, cy = 110, rOuter = 108, rInner = 75;
 
-  // Inner edge circle
-  var innerEdge = document.createElementNS(ns, 'circle');
-  innerEdge.setAttribute('cx', cx);
-  innerEdge.setAttribute('cy', cy);
-  innerEdge.setAttribute('r', rInner);
-  innerEdge.setAttribute('class', 'ring-edge');
-  beatRing.appendChild(innerEdge);
-
-  // Outer edge circle
-  var outerEdge = document.createElementNS(ns, 'circle');
-  outerEdge.setAttribute('cx', cx);
-  outerEdge.setAttribute('cy', cy);
-  outerEdge.setAttribute('r', rOuter);
-  outerEdge.setAttribute('class', 'ring-edge');
-  beatRing.appendChild(outerEdge);
-
-  // Filled segments
+  // Filled segments (bottom layer)
   for (var i = 0; i < 16; i++) {
     var startAngle = (i / 16) * Math.PI * 2 - Math.PI / 2;
     var endAngle = ((i + 1) / 16) * Math.PI * 2 - Math.PI / 2;
@@ -330,7 +314,23 @@ function createBeatSegments() {
     beatRing.appendChild(path);
   }
 
-  // Divider lines between segments
+  // Inner edge circle (on top)
+  var innerEdge = document.createElementNS(ns, 'circle');
+  innerEdge.setAttribute('cx', cx);
+  innerEdge.setAttribute('cy', cy);
+  innerEdge.setAttribute('r', rInner);
+  innerEdge.setAttribute('class', 'ring-edge');
+  beatRing.appendChild(innerEdge);
+
+  // Outer edge circle (on top)
+  var outerEdge = document.createElementNS(ns, 'circle');
+  outerEdge.setAttribute('cx', cx);
+  outerEdge.setAttribute('cy', cy);
+  outerEdge.setAttribute('r', rOuter);
+  outerEdge.setAttribute('class', 'ring-edge');
+  beatRing.appendChild(outerEdge);
+
+  // Divider lines between segments (on top)
   for (var i = 0; i < 16; i++) {
     var angle = (i / 16) * Math.PI * 2 - Math.PI / 2;
     var line = document.createElementNS(ns, 'line');
