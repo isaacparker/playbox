@@ -185,6 +185,7 @@ border:1px solid var(--border);border-radius:12px;cursor:pointer;touch-action:no
 min-height:32px;display:flex;align-items:center;
 }
 .osc-chip.active{color:var(--text);border-color:var(--layer-color,#0ff);background:rgba(255,255,255,0.05)}
+.osc-chips.note-chips .osc-chip{padding:4px 6px;min-height:28px;font-size:10px}
 .synth-row{display:flex;align-items:center;gap:8px}
 .synth-row label{font-size:10px;color:var(--text-dim);min-width:28px}
 .synth-row input[type=range]{flex:1;height:36px;accent-color:var(--layer-color,#0ff)}
@@ -615,26 +616,50 @@ async function processRecording() {
   const channelData = audioBuffer.getChannelData(0);
   const sampleRate = audioBuffer.sampleRate;
 
-  // 1. Detect spectral flatness -> percussive vs tonal
-  const isPercussive = analyzeSpectralFlatness(channelData, sampleRate);
+  // 1. Spectral analysis -> percussive vs tonal + brightness
+  const spectrum = analyzeSpectrum(channelData, sampleRate);
+  const isPercussive = spectrum.isPercussive;
+  const brightness = spectrum.brightness;
 
   // 2. Detect pitch (for tonal sounds)
   let detectedFreq = 0;
-  let note = 'C4';
+  let note = 'A3';
   if (!isPercussive) {
     detectedFreq = detectPitch(channelData, sampleRate);
-    note = quantizeToPentatonic(detectedFreq);
+    note = quantizeToNote(detectedFreq);
   }
 
   // 3. Detect transients and map to 16-step grid
   const steps = detectTransients(channelData, sampleRate);
 
-  // 4. Create layer
+  // 4. Map voice brightness to synth character
+  // Bright voice -> saw/square, high filter. Dark voice -> sine/triangle, low filter.
+  let oscType, filterCutoff, envAttack, envDecay, envSustain, envRelease;
+  if (isPercussive) {
+    oscType = brightness > 0.5 ? 'white' : 'brown';
+    filterCutoff = 1000 + Math.round(brightness * 9000);
+    envAttack = 0.001;
+    envDecay = 0.05 + (1 - brightness) * 0.3;
+    envSustain = 0;
+    envRelease = 0;
+  } else {
+    if (brightness > 0.6) oscType = 'sawtooth';
+    else if (brightness > 0.4) oscType = 'square';
+    else if (brightness > 0.2) oscType = 'triangle';
+    else oscType = 'sine';
+    filterCutoff = 800 + Math.round(brightness * 9200);
+    envAttack = 0.01 + (1 - brightness) * 0.1;
+    envDecay = 0.1 + brightness * 0.4;
+    envSustain = 0.2 + (1 - brightness) * 0.5;
+    envRelease = 0.1 + (1 - brightness) * 0.3;
+  }
+
+  // 5. Create layer
   const layerIdx = currentScene().layers.length;
   const color = LAYER_COLORS[layerIdx % LAYER_COLORS.length];
   const layer = {
     id: Date.now(),
-    name: isPercussive ? 'Perc ' + (layerIdx+1) : 'Tone ' + (layerIdx+1),
+    name: isPercussive ? 'Perc ' + (layerIdx+1) : note,
     isPercussive,
     note,
     detectedFreq,
@@ -642,15 +667,15 @@ async function processRecording() {
     ghostSteps: new Array(16).fill(false),
     color,
     volume: 0.8,
-    filterCutoff: 5000,
+    filterCutoff,
     filterQ: 1,
     muted: false,
     solo: false,
-    oscType: isPercussive ? 'white' : 'sawtooth',
-    envAttack: isPercussive ? 0.001 : 0.01,
-    envDecay: isPercussive ? 0.15 : 0.3,
-    envSustain: isPercussive ? 0 : 0.4,
-    envRelease: isPercussive ? 0 : 0.2,
+    oscType,
+    envAttack,
+    envDecay,
+    envSustain,
+    envRelease,
     octave: 0,
     synthOpen: false,
     synth: null,
@@ -668,28 +693,37 @@ async function processRecording() {
   setState('PLAYING');
 }
 
-// ===== SPECTRAL FLATNESS =====
-function analyzeSpectralFlatness(data, sr) {
-  // Use a portion of the audio
+// ===== FIND LOUDEST REGION =====
+function findLoudestRegion(data, windowSize) {
+  let maxRms = 0, bestStart = 0;
+  const step = Math.floor(windowSize / 4);
+  for (let i = 0; i + windowSize <= data.length; i += step) {
+    let sum = 0;
+    for (let j = i; j < i + windowSize; j++) sum += data[j] * data[j];
+    const rms = sum / windowSize;
+    if (rms > maxRms) { maxRms = rms; bestStart = i; }
+  }
+  return bestStart;
+}
+
+// ===== SPECTRAL ANALYSIS =====
+function analyzeSpectrum(data, sr) {
   const fftSize = 2048;
-  const samples = data.slice(0, Math.min(data.length, fftSize));
-  // Compute magnitude spectrum
+  // Analyze the loudest part, not the start
+  const start = findLoudestRegion(data, fftSize);
+  const samples = data.slice(start, start + fftSize);
   const n = fftSize;
-  const real = new Float32Array(n);
-  const imag = new Float32Array(n);
-  for (let i = 0; i < n && i < samples.length; i++) real[i] = samples[i];
-  // Simple DFT on first portion (fast enough for analysis)
   const mags = new Float32Array(n / 2);
   for (let k = 0; k < n / 2; k++) {
     let re = 0, im = 0;
-    for (let t = 0; t < n; t++) {
+    for (let t = 0; t < n && t < samples.length; t++) {
       const angle = (2 * Math.PI * k * t) / n;
-      re += real[t] * Math.cos(angle);
-      im -= real[t] * Math.sin(angle);
+      re += samples[t] * Math.cos(angle);
+      im -= samples[t] * Math.sin(angle);
     }
     mags[k] = Math.sqrt(re * re + im * im) + 1e-10;
   }
-  // Spectral flatness = geometric mean / arithmetic mean
+  // Spectral flatness
   let logSum = 0, linSum = 0;
   for (let i = 1; i < mags.length; i++) {
     logSum += Math.log(mags[i]);
@@ -699,15 +733,24 @@ function analyzeSpectralFlatness(data, sr) {
   const geoMean = Math.exp(logSum / n2);
   const ariMean = linSum / n2;
   const flatness = geoMean / ariMean;
-  // Threshold: > 0.3 is percussive
-  return flatness > 0.3;
+  // Spectral centroid (brightness 0-1)
+  let weightedSum = 0, totalMag = 0;
+  for (let i = 1; i < mags.length; i++) {
+    weightedSum += i * mags[i];
+    totalMag += mags[i];
+  }
+  const centroidBin = weightedSum / (totalMag || 1);
+  const brightness = Math.min(1, centroidBin / (n / 4));
+  return { isPercussive: flatness > 0.3, brightness };
 }
 
 // ===== PITCH DETECTION (YIN-style autocorrelation) =====
 function detectPitch(data, sr) {
-  const bufSize = Math.min(data.length, 4096);
-  const buf = data.slice(0, bufSize);
-  const halfSize = Math.floor(bufSize / 2);
+  const bufSize = Math.min(data.length, 8192);
+  // Analyze the loudest region for pitch, not the start
+  const start = findLoudestRegion(data, bufSize);
+  const buf = data.slice(start, start + bufSize);
+  const halfSize = Math.floor(buf.length / 2);
   const diff = new Float32Array(halfSize);
   // Difference function
   for (let tau = 0; tau < halfSize; tau++) {
@@ -741,33 +784,16 @@ function detectPitch(data, sr) {
   return sr / tau;
 }
 
-// ===== QUANTIZE TO A MINOR PENTATONIC =====
-function quantizeToPentatonic(freq) {
-  // A minor pentatonic: A, C, D, E, G across octaves
-  const noteFreqs = [];
-  const baseNotes = [
-    { name: 'A', semitone: 0 },
-    { name: 'C', semitone: 3 },
-    { name: 'D', semitone: 5 },
-    { name: 'E', semitone: 7 },
-    { name: 'G', semitone: 10 }
-  ];
-  // Generate notes from A2 to A5
-  for (let oct = 2; oct <= 5; oct++) {
-    baseNotes.forEach(n => {
-      const f = 110 * Math.pow(2, (oct - 2) + n.semitone / 12);
-      const noteName = n.name + oct;
-      noteFreqs.push({ name: noteName, freq: f });
-    });
-  }
-  // Find closest
-  let closest = noteFreqs[0];
-  let minDist = Math.abs(Math.log2(freq / closest.freq));
-  noteFreqs.forEach(nf => {
-    const dist = Math.abs(Math.log2(freq / nf.freq));
-    if (dist < minDist) { minDist = dist; closest = nf; }
-  });
-  return closest.name;
+// ===== QUANTIZE TO CHROMATIC NOTE =====
+const NOTE_NAMES = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
+function quantizeToNote(freq) {
+  if (freq <= 0) return 'A3';
+  // MIDI note from frequency: A4 = 440Hz = MIDI 69
+  const midi = Math.round(12 * Math.log2(freq / 440) + 69);
+  const clamped = Math.max(24, Math.min(96, midi)); // C1 to C7
+  const name = NOTE_NAMES[clamped % 12];
+  const oct = Math.floor(clamped / 12) - 1;
+  return name + oct;
 }
 
 // ===== TRANSIENT DETECTION =====
@@ -1047,29 +1073,13 @@ function renderAllLayers() {
     nameEl.style.color = layer.color;
     header.appendChild(nameEl);
 
-    // Pitch controls (tonal only) or type badge (perc)
+    // Pitch display (tonal) or type badge (perc)
+    let headerNoteDisp = null;
     if (!layer.isPercussive) {
-      const pitchCtrl = document.createElement('div');
-      pitchCtrl.className = 'pitch-ctrl';
-      const octDown = document.createElement('button');
-      octDown.className = 'oct-btn';
-      octDown.textContent = '\u2212';
-      octDown.addEventListener('click', () => {
-        if (layer.octave > -3) { layer.octave--; noteDisp.textContent = getPlaybackNote(layer); }
-      });
-      const noteDisp = document.createElement('div');
-      noteDisp.className = 'layer-type';
-      noteDisp.textContent = getPlaybackNote(layer);
-      const octUp = document.createElement('button');
-      octUp.className = 'oct-btn';
-      octUp.textContent = '+';
-      octUp.addEventListener('click', () => {
-        if (layer.octave < 3) { layer.octave++; noteDisp.textContent = getPlaybackNote(layer); }
-      });
-      pitchCtrl.appendChild(octDown);
-      pitchCtrl.appendChild(noteDisp);
-      pitchCtrl.appendChild(octUp);
-      header.appendChild(pitchCtrl);
+      headerNoteDisp = document.createElement('div');
+      headerNoteDisp.className = 'layer-type';
+      headerNoteDisp.textContent = getPlaybackNote(layer);
+      header.appendChild(headerNoteDisp);
     } else {
       const typeEl = document.createElement('div');
       typeEl.className = 'layer-type';
@@ -1160,6 +1170,70 @@ function renderAllLayers() {
       oscChips.appendChild(chip);
     });
     synthPanel.appendChild(oscChips);
+
+    // Pitch section (tonal only)
+    if (!layer.isPercussive) {
+      const pitchLabel = document.createElement('div');
+      pitchLabel.className = 'synth-section-label';
+      pitchLabel.textContent = 'Pitch';
+      synthPanel.appendChild(pitchLabel);
+
+      const noteChips = document.createElement('div');
+      noteChips.className = 'osc-chips note-chips';
+      const currentNoteName = layer.note.replace(/\d+$/, '');
+      NOTE_NAMES.forEach(n => {
+        const chip = document.createElement('button');
+        chip.className = 'osc-chip' + (n === currentNoteName ? ' active' : '');
+        chip.textContent = n;
+        chip.addEventListener('click', () => {
+          const oct = layer.note.match(/\d+$/)[0];
+          layer.note = n + oct;
+          noteChips.querySelectorAll('.osc-chip').forEach(c => {
+            c.classList.toggle('active', c.textContent === n);
+          });
+          // Update header note display
+          if (headerNoteDisp) headerNoteDisp.textContent = getPlaybackNote(layer);
+        });
+        noteChips.appendChild(chip);
+      });
+      synthPanel.appendChild(noteChips);
+
+      // Octave row in synth panel
+      const octRow = document.createElement('div');
+      octRow.className = 'synth-row';
+      const octLabel = document.createElement('label');
+      octLabel.textContent = 'Oct';
+      const octDownPanel = document.createElement('button');
+      octDownPanel.className = 'oct-btn';
+      octDownPanel.textContent = '\u2212';
+      const octDisplay = document.createElement('span');
+      octDisplay.className = 'val';
+      octDisplay.style.minWidth = '40px';
+      octDisplay.style.textAlign = 'center';
+      octDisplay.textContent = getPlaybackNote(layer);
+      const octUpPanel = document.createElement('button');
+      octUpPanel.className = 'oct-btn';
+      octUpPanel.textContent = '+';
+      octDownPanel.addEventListener('click', () => {
+        if (layer.octave > -3) {
+          layer.octave--;
+          octDisplay.textContent = getPlaybackNote(layer);
+          if (headerNoteDisp) headerNoteDisp.textContent = getPlaybackNote(layer);
+        }
+      });
+      octUpPanel.addEventListener('click', () => {
+        if (layer.octave < 3) {
+          layer.octave++;
+          octDisplay.textContent = getPlaybackNote(layer);
+          if (headerNoteDisp) headerNoteDisp.textContent = getPlaybackNote(layer);
+        }
+      });
+      octRow.appendChild(octLabel);
+      octRow.appendChild(octDownPanel);
+      octRow.appendChild(octDisplay);
+      octRow.appendChild(octUpPanel);
+      synthPanel.appendChild(octRow);
+    }
 
     // Envelope section
     const envLabel = document.createElement('div');
