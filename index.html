@@ -9,6 +9,7 @@
 <script src="https://cdn.jsdelivr.net/npm/meyda@5.6.4/dist/web/meyda.min.js"></script>
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+button,span,div{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
 :root{
 --bg:#000;--surface:#0d0d0d;--surface2:#1c1c1c;--surface3:#2a2a2a;--border:#555;
 --text:#eee;--text-dim:#888;--accent:#0ff;--record:#f33;
@@ -103,6 +104,7 @@ background:radial-gradient(circle,#111 0%,#0a0a0a 100%);
 border:none;cursor:pointer;
 display:flex;align-items:center;justify-content:center;flex-direction:column;
 touch-action:none;transition:border-color 0.2s,box-shadow 0.2s;
+-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;
 }
 #flow-btn.recording{
 border-color:var(--record);
