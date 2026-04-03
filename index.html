@@ -376,11 +376,11 @@ let selectedIntent = null;
 // ===== PRESET PATCHES =====
 const PRESETS = {
   kick: [
-    { name: '808',       osc: 'brown', attack: 0.001, decay: 0.45, sustain: 0, release: 0.3,  filter: 200,  q: 1,   filtEnv: 4000, drive: 0.15 },
-    { name: '909',       osc: 'brown', attack: 0.001, decay: 0.18, sustain: 0, release: 0.1,  filter: 300,  q: 2,   filtEnv: 5500, drive: 0.35 },
-    { name: 'Distorted', osc: 'brown', attack: 0.001, decay: 0.30, sustain: 0, release: 0.2,  filter: 250,  q: 1.5, filtEnv: 3500, drive: 0.85 },
-    { name: 'Sub',       osc: 'brown', attack: 0.005, decay: 0.60, sustain: 0, release: 0.4,  filter: 150,  q: 0.5, filtEnv: 2000, drive: 0.05 },
-    { name: 'Gabber',    osc: 'brown', attack: 0.001, decay: 0.22, sustain: 0, release: 0.08, filter: 400,  q: 3,   filtEnv: 6000, drive: 0.95 },
+    { name: '808',       osc: 'sine', attack: 0.001, decay: 0.5,  sustain: 0, release: 0.3,  filter: 300,  q: 1,   filtEnv: 2000, drive: 0.10 },
+    { name: '909',       osc: 'sine', attack: 0.001, decay: 0.2,  sustain: 0, release: 0.1,  filter: 500,  q: 2,   filtEnv: 3000, drive: 0.30 },
+    { name: 'Distorted', osc: 'sine', attack: 0.001, decay: 0.35, sustain: 0, release: 0.15, filter: 400,  q: 1.5, filtEnv: 2500, drive: 0.80 },
+    { name: 'Sub',       osc: 'sine', attack: 0.003, decay: 0.7,  sustain: 0, release: 0.4,  filter: 200,  q: 0.5, filtEnv: 1000, drive: 0.05 },
+    { name: 'Gabber',    osc: 'sine', attack: 0.001, decay: 0.25, sustain: 0, release: 0.08, filter: 600,  q: 3,   filtEnv: 4000, drive: 0.95 },
   ],
   snare: [
     { name: '808',       osc: 'white', attack: 0.001, decay: 0.25, sustain: 0, release: 0.15, filter: 1800, q: 1.2, filtEnv: 4000, drive: 0.20 },
@@ -615,7 +615,10 @@ async function initAudio() {
               );
             }
             const dur = (l.durations && l.durations[step]) || '16n';
-            if (l.isPercussive) {
+            if (l.intentId === 'kick') {
+              // MembraneSynth takes a note (pitch) — C1 is a deep kick
+              l.synth.triggerAttackRelease('C1', dur, time);
+            } else if (l.isPercussive) {
               l.synth.triggerAttackRelease(dur, time);
             } else {
               // Per-step note, with octave offset applied
@@ -1258,7 +1261,16 @@ function createSynthForLayer(layer) {
   }
   layer.filter.toDestination();
 
-  if (layer.isPercussive) {
+  if (layer.intentId === 'kick') {
+    // Kick uses MembraneSynth — pitched sine with fast pitch decay
+    layer.synth = new Tone.MembraneSynth({
+      pitchDecay: layer.envDecay * 0.5 || 0.05,
+      octaves: 6,
+      oscillator: { type: 'sine' },
+      envelope: { attack: layer.envAttack || 0.001, decay: layer.envDecay || 0.3, sustain: 0, release: layer.envRelease || 0.1 }
+    });
+    layer.synth.connect(layer.drive);
+  } else if (layer.isPercussive) {
     layer.synth = new Tone.NoiseSynth({
       noise: { type: layer.oscType || 'white' },
       envelope: { attack: layer.envAttack, decay: layer.envDecay, sustain: layer.envSustain }
@@ -1296,7 +1308,12 @@ function createSynthForLayer(layer) {
 function updateSynthParams(layer) {
   if (!layer.synth) return;
   try {
-    if (layer.isPercussive) {
+    if (layer.intentId === 'kick') {
+      layer.synth.set({
+        pitchDecay: (layer.envDecay || 0.1) * 0.5,
+        envelope: { attack: layer.envAttack, decay: layer.envDecay, sustain: 0, release: layer.envRelease || 0.1 }
+      });
+    } else if (layer.isPercussive) {
       layer.synth.set({
         noise: { type: layer.oscType || 'white' },
         envelope: { attack: layer.envAttack, decay: layer.envDecay, sustain: layer.envSustain }
