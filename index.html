@@ -758,10 +758,9 @@ async function processRecording() {
   } else {
     // Auto-detect from audio
     isPercussive = spectrum.isPercussive;
-    if (!isPercussive) {
-      detectedFreq = detectPitch(channelData, sampleRate);
-      note = quantizeToNote(detectedFreq);
-    }
+    // Always try pitch detection — even percussive sounds have a fundamental
+    detectedFreq = detectPitch(channelData, sampleRate);
+    if (detectedFreq > 0) note = quantizeToNote(detectedFreq);
     // Map brightness to synth character
     filterQ = 1;
     if (isPercussive) {
@@ -782,7 +781,7 @@ async function processRecording() {
       envSustain = 0.2 + (1 - brightness) * 0.5;
       envRelease = 0.1 + (1 - brightness) * 0.3;
     }
-    layerName = isPercussive ? 'Perc' : note;
+    layerName = (isPercussive ? 'Perc ' : '') + note;
   }
 
   // 2. Detect transients and map to 16-step grid
@@ -883,14 +882,34 @@ function analyzeSpectrum(data, sr) {
   return { isPercussive: flatness > 0.3, brightness };
 }
 
-// ===== PITCH DETECTION (YIN-style autocorrelation) =====
+// ===== PITCH DETECTION (multi-pass YIN) =====
 function detectPitch(data, sr) {
-  const bufSize = Math.min(data.length, 8192);
-  // Analyze the loudest region for pitch, not the start
-  const start = findLoudestRegion(data, bufSize);
-  const buf = data.slice(start, start + bufSize);
+  // Try multiple windows across the loudest region for best result
+  const windowSize = Math.min(data.length, 8192);
+  const loudStart = findLoudestRegion(data, windowSize);
+
+  // Try 3 overlapping windows around the loudest point
+  const offsets = [0, Math.floor(windowSize / 4), Math.floor(windowSize / 2)];
+  const candidates = [];
+
+  for (const offset of offsets) {
+    const start = Math.min(loudStart + offset, data.length - windowSize);
+    if (start < 0) continue;
+    const freq = yinPitch(data.slice(start, start + windowSize), sr);
+    if (freq > 0) candidates.push(freq);
+  }
+
+  if (candidates.length === 0) return 220;
+
+  // Return the median candidate for stability
+  candidates.sort((a, b) => a - b);
+  return candidates[Math.floor(candidates.length / 2)];
+}
+
+function yinPitch(buf, sr) {
   const halfSize = Math.floor(buf.length / 2);
   const diff = new Float32Array(halfSize);
+
   // Difference function
   for (let tau = 0; tau < halfSize; tau++) {
     let sum = 0;
@@ -900,6 +919,7 @@ function detectPitch(data, sr) {
     }
     diff[tau] = sum;
   }
+
   // Cumulative mean normalized difference
   diff[0] = 1;
   let runningSum = 0;
@@ -907,20 +927,31 @@ function detectPitch(data, sr) {
     runningSum += diff[tau];
     diff[tau] = diff[tau] * tau / runningSum;
   }
-  // Find first dip below threshold
-  const threshold = 0.2;
-  let tau = 2;
-  const minPeriod = Math.floor(sr / 800); // max 800 Hz
-  const maxPeriod = Math.floor(sr / 60);  // min 60 Hz
-  for (tau = minPeriod; tau < Math.min(halfSize, maxPeriod); tau++) {
-    if (diff[tau] < threshold) {
-      // Find local minimum
-      while (tau + 1 < halfSize && diff[tau + 1] < diff[tau]) tau++;
-      break;
+
+  // Progressively relax threshold to find best match
+  const minPeriod = Math.floor(sr / 1200); // up to 1200 Hz
+  const maxPeriod = Math.floor(sr / 50);   // down to 50 Hz
+  const thresholds = [0.15, 0.25, 0.4, 0.6];
+
+  for (const threshold of thresholds) {
+    for (let tau = minPeriod; tau < Math.min(halfSize, maxPeriod); tau++) {
+      if (diff[tau] < threshold) {
+        // Refine: find local minimum
+        while (tau + 1 < halfSize && diff[tau + 1] < diff[tau]) tau++;
+        // Parabolic interpolation for sub-sample accuracy
+        if (tau > 0 && tau < halfSize - 1) {
+          const a = diff[tau - 1], b = diff[tau], c = diff[tau + 1];
+          const shift = (a - c) / (2 * (a - 2 * b + c));
+          if (Math.abs(shift) < 1) {
+            return sr / (tau + shift);
+          }
+        }
+        return sr / tau;
+      }
     }
   }
-  if (tau >= halfSize || tau >= maxPeriod) return 220; // default A3
-  return sr / tau;
+
+  return 0; // no pitch found
 }
 
 // ===== QUANTIZE TO CHROMATIC NOTE =====
