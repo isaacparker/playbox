@@ -44,8 +44,9 @@ transition:transform 0.2s;
 /* TRANSPORT */
 #transport{
 display:flex;align-items:center;gap:8px;padding:8px 12px;
-background:var(--surface);border-bottom:1px solid var(--accent);
-flex-shrink:0;min-height:52px;flex-wrap:wrap;
+background:rgba(13,13,13,0.85);-webkit-backdrop-filter:blur(16px);backdrop-filter:blur(16px);
+border-bottom:1px solid var(--accent);
+flex-shrink:0;min-height:52px;flex-wrap:wrap;z-index:2;
 }
 .transport-btn{
 min-width:44px;min-height:44px;background:var(--surface3);color:var(--text);
@@ -116,8 +117,9 @@ font-size:11px;color:var(--text-dim);font-variant-numeric:tabular-nums;
 /* LAYERS */
 #layers-area{
 flex:0 1 auto;max-height:45vh;overflow-y:auto;overflow-x:hidden;
+background:rgba(13,13,13,0.85);-webkit-backdrop-filter:blur(16px);backdrop-filter:blur(16px);
 border-top:1px solid var(--accent);border-radius:12px 12px 0 0;
--webkit-overflow-scrolling:touch;
+-webkit-overflow-scrolling:touch;z-index:2;
 }
 #layers-area:empty::after{
 content:'Record to add layers';display:block;text-align:center;
