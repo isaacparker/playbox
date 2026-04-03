@@ -10,7 +10,7 @@
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 :root{
---bg:#000;--surface:#0d0d0d;--surface2:#1c1c1c;--surface3:#2a2a2a;--border:#333;
+--bg:#000;--surface:#0d0d0d;--surface2:#1c1c1c;--surface3:#2a2a2a;--border:#444;
 --text:#eee;--text-dim:#888;--accent:#0ff;--record:#f33;
 --safe-top:env(safe-area-inset-top,0px);
 --safe-bottom:env(safe-area-inset-bottom,0px);
@@ -174,10 +174,11 @@ display:flex;align-items:center;justify-content:center;touch-action:none;
 }
 .synth-toggle.open{color:var(--accent);border-color:var(--accent)}
 .synth-panel{
-display:none;flex-direction:column;gap:10px;padding:0;
+display:none;flex-direction:column;gap:6px;padding:0;
 }
 .synth-panel.open{display:flex}
 .synth-group{
+background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:8px 10px;
 display:flex;flex-direction:column;gap:6px;
 }
 .synth-group-label{font-size:9px;color:var(--text-dim);text-transform:uppercase;letter-spacing:1px}
