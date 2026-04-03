@@ -152,6 +152,25 @@ opacity:0.4;
 .layer-slider-group{display:flex;align-items:center;gap:4px;flex:1;min-width:100px}
 .layer-slider-group label{font-size:10px;color:var(--text-dim);min-width:24px}
 .layer-slider-group input[type=range]{flex:1;height:36px;accent-color:var(--layer-color,#0ff)}
+.synth-toggle{
+font-size:10px;color:var(--text-dim);background:var(--surface2);border:1px solid var(--border);
+border-radius:4px;padding:2px 6px;cursor:pointer;min-height:36px;min-width:36px;
+display:flex;align-items:center;justify-content:center;touch-action:none;
+}
+.synth-toggle.open{color:var(--accent);border-color:var(--accent)}
+.synth-panel{
+display:none;flex-direction:column;gap:8px;padding:8px;
+background:var(--surface);border:1px solid var(--border);border-radius:6px;
+}
+.synth-panel.open{display:flex}
+.synth-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.synth-row label{font-size:10px;color:var(--text-dim);min-width:28px}
+.synth-row select{
+font-size:11px;background:var(--surface2);color:var(--text);
+border:1px solid var(--border);border-radius:4px;padding:4px 6px;min-height:36px;
+}
+.synth-row input[type=range]{flex:1;height:36px;accent-color:var(--layer-color,#0ff)}
+.synth-row .val{font-size:10px;color:var(--text-dim);min-width:32px;text-align:right}
 /* SCROLLBAR */
 #layers-area::-webkit-scrollbar{width:4px}
 #layers-area::-webkit-scrollbar-track{background:var(--bg)}
@@ -562,8 +581,14 @@ async function processRecording() {
     color,
     volume: 0.8,
     filterCutoff: 5000,
+    filterQ: 1,
     muted: false,
     solo: false,
+    oscType: isPercussive ? 'white' : 'sawtooth',
+    envAttack: isPercussive ? 0.001 : 0.01,
+    envDecay: isPercussive ? 0.15 : 0.3,
+    envSustain: isPercussive ? 0 : 0.4,
+    envRelease: isPercussive ? 0 : 0.2,
     synth: null,
     filter: null
   };
@@ -730,6 +755,7 @@ function createSynthForLayer(layer) {
 
   layer.filter = new Tone.Filter({
     frequency: layer.filterCutoff,
+    Q: layer.filterQ || 1,
     type: 'lowpass',
     rolloff: -12
   });
@@ -741,13 +767,13 @@ function createSynthForLayer(layer) {
 
   if (layer.isPercussive) {
     layer.synth = new Tone.NoiseSynth({
-      noise: { type: 'white' },
-      envelope: { attack: 0.001, decay: 0.15, sustain: 0 }
+      noise: { type: layer.oscType || 'white' },
+      envelope: { attack: layer.envAttack, decay: layer.envDecay, sustain: layer.envSustain }
     });
   } else {
     layer.synth = new Tone.PolySynth(Tone.Synth, {
-      oscillator: { type: 'sawtooth' },
-      envelope: { attack: 0.01, decay: 0.3, sustain: 0.4, release: 0.2 }
+      oscillator: { type: layer.oscType || 'sawtooth' },
+      envelope: { attack: layer.envAttack, decay: layer.envDecay, sustain: layer.envSustain, release: layer.envRelease }
     });
   }
 
@@ -976,6 +1002,12 @@ function renderAllLayers() {
     });
     header.appendChild(soloBtn);
 
+    const synthToggle = document.createElement('button');
+    synthToggle.className = 'synth-toggle';
+    synthToggle.textContent = '\u266B';
+    synthToggle.title = 'Synth settings';
+    header.appendChild(synthToggle);
+
     const delBtn = document.createElement('button');
     delBtn.className = 'layer-btn del';
     delBtn.textContent = '\u00D7';
@@ -990,6 +1022,142 @@ function renderAllLayers() {
     header.appendChild(delBtn);
 
     strip.appendChild(header);
+
+    // Synth settings panel
+    const synthPanel = document.createElement('div');
+    synthPanel.className = 'synth-panel';
+
+    synthToggle.addEventListener('click', () => {
+      synthPanel.classList.toggle('open');
+      synthToggle.classList.toggle('open');
+    });
+
+    // Oscillator / noise type
+    const oscRow = document.createElement('div');
+    oscRow.className = 'synth-row';
+    const oscLabel = document.createElement('label');
+    oscLabel.textContent = layer.isPercussive ? 'Noise' : 'Osc';
+    const oscSelect = document.createElement('select');
+    const oscOptions = layer.isPercussive
+      ? ['white', 'pink', 'brown']
+      : ['sawtooth', 'square', 'sine', 'triangle'];
+    oscOptions.forEach(opt => {
+      const o = document.createElement('option');
+      o.value = opt;
+      o.textContent = opt;
+      if (opt === layer.oscType) o.selected = true;
+      oscSelect.appendChild(o);
+    });
+    oscSelect.addEventListener('change', () => {
+      layer.oscType = oscSelect.value;
+      createSynthForLayer(layer);
+    });
+    oscRow.appendChild(oscLabel);
+    oscRow.appendChild(oscSelect);
+    synthPanel.appendChild(oscRow);
+
+    // ADSR controls
+    const envParams = layer.isPercussive
+      ? [['Atk', 'envAttack', 0.001, 0.5, 0.001], ['Dec', 'envDecay', 0.01, 1, 0.01], ['Sus', 'envSustain', 0, 1, 0.01]]
+      : [['Atk', 'envAttack', 0.001, 1, 0.001], ['Dec', 'envDecay', 0.01, 2, 0.01], ['Sus', 'envSustain', 0, 1, 0.01], ['Rel', 'envRelease', 0.01, 2, 0.01]];
+
+    envParams.forEach(([label, prop, min, max, step]) => {
+      const row = document.createElement('div');
+      row.className = 'synth-row';
+      const lbl = document.createElement('label');
+      lbl.textContent = label;
+      const slider = document.createElement('input');
+      slider.type = 'range';
+      slider.min = min;
+      slider.max = max;
+      slider.step = step;
+      slider.value = layer[prop];
+      slider.style.accentColor = layer.color;
+      const val = document.createElement('span');
+      val.className = 'val';
+      val.textContent = parseFloat(layer[prop]).toFixed(2);
+      let envDebounce = null;
+      slider.addEventListener('input', () => {
+        val.textContent = parseFloat(slider.value).toFixed(2);
+        clearTimeout(envDebounce);
+        envDebounce = setTimeout(() => {
+          layer[prop] = parseFloat(slider.value);
+          if (layer.synth) {
+            try {
+              if (layer.isPercussive) {
+                layer.synth.set({ envelope: { attack: layer.envAttack, decay: layer.envDecay, sustain: layer.envSustain } });
+              } else {
+                layer.synth.set({ envelope: { attack: layer.envAttack, decay: layer.envDecay, sustain: layer.envSustain, release: layer.envRelease } });
+              }
+            } catch(e) {}
+          }
+        }, 30);
+      });
+      row.appendChild(lbl);
+      row.appendChild(slider);
+      row.appendChild(val);
+      synthPanel.appendChild(row);
+    });
+
+    // Filter cutoff
+    const filtRow = document.createElement('div');
+    filtRow.className = 'synth-row';
+    const filtLbl = document.createElement('label');
+    filtLbl.textContent = 'Freq';
+    const filtSlider = document.createElement('input');
+    filtSlider.type = 'range';
+    filtSlider.min = '100';
+    filtSlider.max = '10000';
+    filtSlider.step = '1';
+    filtSlider.value = layer.filterCutoff;
+    filtSlider.style.accentColor = layer.color;
+    const filtVal = document.createElement('span');
+    filtVal.className = 'val';
+    filtVal.textContent = layer.filterCutoff;
+    let filtDebounce = null;
+    filtSlider.addEventListener('input', () => {
+      filtVal.textContent = filtSlider.value;
+      clearTimeout(filtDebounce);
+      filtDebounce = setTimeout(() => {
+        layer.filterCutoff = parseInt(filtSlider.value);
+        if (layer.filter) layer.filter.frequency.value = layer.filterCutoff;
+      }, 30);
+    });
+    filtRow.appendChild(filtLbl);
+    filtRow.appendChild(filtSlider);
+    filtRow.appendChild(filtVal);
+    synthPanel.appendChild(filtRow);
+
+    // Filter resonance (Q)
+    const resRow = document.createElement('div');
+    resRow.className = 'synth-row';
+    const resLbl = document.createElement('label');
+    resLbl.textContent = 'Res';
+    const resSlider = document.createElement('input');
+    resSlider.type = 'range';
+    resSlider.min = '0.1';
+    resSlider.max = '20';
+    resSlider.step = '0.1';
+    resSlider.value = layer.filterQ;
+    resSlider.style.accentColor = layer.color;
+    const resVal = document.createElement('span');
+    resVal.className = 'val';
+    resVal.textContent = parseFloat(layer.filterQ).toFixed(1);
+    let resDebounce = null;
+    resSlider.addEventListener('input', () => {
+      resVal.textContent = parseFloat(resSlider.value).toFixed(1);
+      clearTimeout(resDebounce);
+      resDebounce = setTimeout(() => {
+        layer.filterQ = parseFloat(resSlider.value);
+        if (layer.filter) layer.filter.Q.value = layer.filterQ;
+      }, 30);
+    });
+    resRow.appendChild(resLbl);
+    resRow.appendChild(resSlider);
+    resRow.appendChild(resVal);
+    synthPanel.appendChild(resRow);
+
+    strip.appendChild(synthPanel);
 
     // Step grid
     const grid = document.createElement('div');
@@ -1066,30 +1234,6 @@ function renderAllLayers() {
     volGroup.appendChild(volSlider);
     controls.appendChild(volGroup);
 
-    // Filter cutoff
-    const filtGroup = document.createElement('div');
-    filtGroup.className = 'layer-slider-group';
-    const filtLabel = document.createElement('label');
-    filtLabel.textContent = 'Flt';
-    const filtSlider = document.createElement('input');
-    filtSlider.type = 'range';
-    filtSlider.min = '100';
-    filtSlider.max = '10000';
-    filtSlider.value = layer.filterCutoff;
-    filtSlider.style.accentColor = layer.color;
-    let filtDebounce = null;
-    filtSlider.addEventListener('input', () => {
-      clearTimeout(filtDebounce);
-      filtDebounce = setTimeout(() => {
-        layer.filterCutoff = parseInt(filtSlider.value);
-        if (layer.filter) {
-          layer.filter.frequency.value = layer.filterCutoff;
-        }
-      }, 30);
-    });
-    filtGroup.appendChild(filtLabel);
-    filtGroup.appendChild(filtSlider);
-    controls.appendChild(filtGroup);
 
     strip.appendChild(controls);
     layersArea.appendChild(strip);
