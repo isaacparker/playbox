@@ -148,6 +148,13 @@ border-top:1px solid var(--accent);border-left:1px solid var(--accent);border-ri
 content:'Record to add layers';display:block;text-align:center;
 color:var(--text-dim);font-size:13px;padding:24px;
 }
+#layers-area.minimized .layer-strip{display:none}
+#layers-toggle{
+display:flex;align-items:center;justify-content:center;
+padding:6px;cursor:pointer;touch-action:none;
+font-size:10px;color:var(--text-dim);gap:4px;
+}
+#layers-toggle:active{color:var(--accent)}
 .layer-strip{
 display:flex;flex-direction:column;padding:10px 12px;
 border-bottom:1px solid var(--accent);gap:6px;
@@ -260,7 +267,9 @@ min-height:32px;display:flex;align-items:center;
 </button>
 <div id="step-indicator">Step: 1 / 16</div>
 </div>
-<div id="layers-area"></div>
+<div id="layers-area">
+<div id="layers-toggle"></div>
+</div>
 </div>
 <script>
 (function(){
@@ -332,6 +341,52 @@ const INTENTS = [
   { id: 'pad',   label: 'Pad',   perc: false, osc: 'sine',     attack: 0.3,   decay: 0.5,  sustain: 0.8, release: 0.6,  filter: 2000, q: 0.5, drive: 0, filtEnv: 2000 },
 ];
 let selectedIntent = null;
+
+// ===== PRESET PATCHES =====
+const PRESETS = {
+  kick: [
+    { name: '808',       osc: 'brown', attack: 0.001, decay: 0.45, sustain: 0, release: 0.3,  filter: 200,  q: 1,   filtEnv: 4000, drive: 0.15 },
+    { name: '909',       osc: 'brown', attack: 0.001, decay: 0.18, sustain: 0, release: 0.1,  filter: 300,  q: 2,   filtEnv: 5500, drive: 0.35 },
+    { name: 'Distorted', osc: 'brown', attack: 0.001, decay: 0.30, sustain: 0, release: 0.2,  filter: 250,  q: 1.5, filtEnv: 3500, drive: 0.85 },
+    { name: 'Sub',       osc: 'brown', attack: 0.005, decay: 0.60, sustain: 0, release: 0.4,  filter: 150,  q: 0.5, filtEnv: 2000, drive: 0.05 },
+    { name: 'Gabber',    osc: 'brown', attack: 0.001, decay: 0.22, sustain: 0, release: 0.08, filter: 400,  q: 3,   filtEnv: 6000, drive: 0.95 },
+  ],
+  snare: [
+    { name: '808',       osc: 'white', attack: 0.001, decay: 0.25, sustain: 0, release: 0.15, filter: 1800, q: 1.2, filtEnv: 4000, drive: 0.20 },
+    { name: '909',       osc: 'white', attack: 0.001, decay: 0.15, sustain: 0, release: 0.08, filter: 3500, q: 2.5, filtEnv: 5000, drive: 0.30 },
+    { name: 'Lo-Fi',     osc: 'pink',  attack: 0.005, decay: 0.30, sustain: 0, release: 0.2,  filter: 1200, q: 0.8, filtEnv: 2000, drive: 0.60 },
+    { name: 'Trap',      osc: 'white', attack: 0.001, decay: 0.35, sustain: 0, release: 0.25, filter: 2500, q: 3,   filtEnv: 6000, drive: 0.10 },
+    { name: 'Industrial',osc: 'brown', attack: 0.001, decay: 0.20, sustain: 0, release: 0.12, filter: 800,  q: 5,   filtEnv: 7000, drive: 0.90 },
+  ],
+  hat: [
+    { name: 'Closed',    osc: 'white', attack: 0.001, decay: 0.05, sustain: 0, release: 0.02, filter: 7000, q: 1,   filtEnv: 2000, drive: 0.10 },
+    { name: 'Open',      osc: 'white', attack: 0.001, decay: 0.35, sustain: 0, release: 0.2,  filter: 6500, q: 1.5, filtEnv: 1500, drive: 0.10 },
+    { name: '808',       osc: 'white', attack: 0.001, decay: 0.08, sustain: 0, release: 0.04, filter: 8000, q: 3,   filtEnv: 3000, drive: 0.05 },
+    { name: 'Vinyl',     osc: 'pink',  attack: 0.003, decay: 0.12, sustain: 0, release: 0.08, filter: 5000, q: 0.5, filtEnv: 1000, drive: 0.40 },
+    { name: 'Metallic',  osc: 'white', attack: 0.001, decay: 0.10, sustain: 0, release: 0.06, filter: 9000, q: 8,   filtEnv: 4000, drive: 0.25 },
+  ],
+  bass: [
+    { name: 'Reese',     osc: 'sawtooth', attack: 0.01,  decay: 0.1,  sustain: 0.85, release: 0.15, filter: 800,  q: 1.5, filtEnv: 1200, drive: 0.30 },
+    { name: 'Acid 303',  osc: 'sawtooth', attack: 0.005, decay: 0.15, sustain: 0,    release: 0.05, filter: 500,  q: 12,  filtEnv: 6000, drive: 0.50 },
+    { name: 'Sub',       osc: 'sine',     attack: 0.01,  decay: 0.05, sustain: 1.0,  release: 0.2,  filter: 300,  q: 0.5, filtEnv: 200,  drive: 0.05 },
+    { name: 'Moog',      osc: 'square',   attack: 0.005, decay: 0.3,  sustain: 0.7,  release: 0.1,  filter: 1200, q: 3,   filtEnv: 3000, drive: 0.20 },
+    { name: 'DnB',       osc: 'sawtooth', attack: 0.01,  decay: 0.4,  sustain: 0.6,  release: 0.15, filter: 600,  q: 6,   filtEnv: 4500, drive: 0.65 },
+  ],
+  lead: [
+    { name: 'Hoover',    osc: 'sawtooth', attack: 0.02,  decay: 0.2,  sustain: 0.75, release: 0.3,  filter: 2500, q: 2,   filtEnv: 3500, drive: 0.55 },
+    { name: 'Acid',      osc: 'sawtooth', attack: 0.005, decay: 0.12, sustain: 0.3,  release: 0.05, filter: 800,  q: 14,  filtEnv: 7000, drive: 0.45 },
+    { name: 'Sync',      osc: 'square',   attack: 0.001, decay: 0.08, sustain: 0.65, release: 0.1,  filter: 3000, q: 4,   filtEnv: 5000, drive: 0.35 },
+    { name: 'Trance',    osc: 'sawtooth', attack: 0.005, decay: 0.15, sustain: 0.8,  release: 0.2,  filter: 4000, q: 2.5, filtEnv: 2000, drive: 0.20 },
+    { name: 'Chip',      osc: 'square',   attack: 0.001, decay: 0.01, sustain: 1.0,  release: 0.01, filter: 8000, q: 0.3, filtEnv: 200,  drive: 0.0 },
+  ],
+  pad: [
+    { name: 'Juno',      osc: 'sawtooth', attack: 0.8,  decay: 0.5, sustain: 0.7,  release: 1.5, filter: 2000, q: 0.8, filtEnv: 1500, drive: 0.10 },
+    { name: 'Dark',      osc: 'sawtooth', attack: 1.2,  decay: 0.8, sustain: 0.6,  release: 2.0, filter: 600,  q: 1,   filtEnv: 500,  drive: 0.15 },
+    { name: 'Glass',     osc: 'triangle', attack: 0.6,  decay: 0.3, sustain: 0.8,  release: 2.5, filter: 5000, q: 3,   filtEnv: 2000, drive: 0.0 },
+    { name: 'Strings',   osc: 'sawtooth', attack: 1.0,  decay: 0.6, sustain: 0.75, release: 1.8, filter: 3000, q: 0.5, filtEnv: 800,  drive: 0.05 },
+    { name: 'Ambient',   osc: 'triangle', attack: 2.0,  decay: 1.0, sustain: 0.5,  release: 4.0, filter: 1500, q: 1.2, filtEnv: 1000, drive: 0.20 },
+  ]
+};
 
 function createIntentChips() {
   while (intentRing.firstChild) intentRing.removeChild(intentRing.firstChild);
@@ -753,7 +808,9 @@ async function processRecording() {
     driveAmount = intent.drive || 0;
     filtEnvAmount = intent.filtEnv || 0;
     layerName = intent.label;
-  } else {
+  }
+  const intentId = intent ? intent.id : null;
+  if (!intent) {
     isPercussive = spectrum.isPercussive;
     filterQ = 1;
     if (isPercussive) {
@@ -783,6 +840,7 @@ async function processRecording() {
   const layer = {
     id: Date.now(),
     name: layerName,
+    intentId: intentId,
     isPercussive,
     note: analysis.fallbackNote,
     notes: analysis.notes,
@@ -1315,10 +1373,27 @@ async function captureRoom() {
 
 // ===== LAYER RENDERING =====
 const expandedLayers = new Set();
+let layersPanelMinimized = false;
+const layersToggle = document.getElementById('layers-toggle');
+layersToggle.addEventListener('click', () => {
+  layersPanelMinimized = !layersPanelMinimized;
+  layersArea.classList.toggle('minimized', layersPanelMinimized);
+  updateLayersToggle();
+});
+function updateLayersToggle() {
+  const count = currentScene().layers.length;
+  if (count === 0) { layersToggle.style.display = 'none'; return; }
+  layersToggle.style.display = 'flex';
+  layersToggle.textContent = layersPanelMinimized
+    ? '\u25B4 ' + count + ' layer' + (count > 1 ? 's' : '')
+    : '\u25BE ' + count + ' layer' + (count > 1 ? 's' : '');
+}
 
 function renderAllLayers() {
-  while (layersArea.firstChild) layersArea.removeChild(layersArea.firstChild);
+  // Remove all children except the toggle
+  while (layersToggle.nextSibling) layersArea.removeChild(layersToggle.nextSibling);
   const scene = currentScene();
+  updateLayersToggle();
   scene.layers.forEach((layer, idx) => {
     const strip = document.createElement('div');
     const isExpanded = expandedLayers.has(layer.id);
@@ -1416,6 +1491,48 @@ function renderAllLayers() {
       synthToggle.classList.toggle('open', layer.synthOpen);
       synthToggle.textContent = layer.synthOpen ? '\u2715' : '\u266B';
     });
+
+    // --- Preset group ---
+    const presetCategory = layer.intentId || (layer.isPercussive ? 'kick' : 'bass');
+    const presets = PRESETS[presetCategory] || [];
+    if (presets.length > 0) {
+      const presetGroup = document.createElement('div');
+      presetGroup.className = 'synth-group';
+      const presetLabel = document.createElement('div');
+      presetLabel.className = 'synth-group-label';
+      presetLabel.textContent = 'Preset';
+      presetGroup.appendChild(presetLabel);
+      const presetChips = document.createElement('div');
+      presetChips.className = 'osc-chips';
+      presets.forEach(p => {
+        const chip = document.createElement('button');
+        chip.className = 'osc-chip';
+        chip.textContent = p.name;
+        chip.addEventListener('click', () => {
+          layer.oscType = p.osc;
+          layer.envAttack = p.attack;
+          layer.envDecay = p.decay;
+          layer.envSustain = p.sustain;
+          layer.envRelease = p.release;
+          layer.filterCutoff = p.filter;
+          layer.filterQ = p.q;
+          layer.filtEnvAmount = p.filtEnv;
+          layer.driveAmount = p.drive;
+          createSynthForLayer(layer);
+          if (layer.filter) {
+            layer.filter.frequency.value = layer.filterCutoff;
+            layer.filter.Q.value = layer.filterQ;
+          }
+          presetChips.querySelectorAll('.osc-chip').forEach(c => c.classList.remove('active'));
+          chip.classList.add('active');
+          expandedLayers.add(layer.id);
+          renderAllLayers();
+        });
+        presetChips.appendChild(chip);
+      });
+      presetGroup.appendChild(presetChips);
+      synthPanel.appendChild(presetGroup);
+    }
 
     // --- Waveform group ---
     const oscGroup = document.createElement('div');
