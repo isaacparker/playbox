@@ -139,7 +139,7 @@ font-size:11px;color:var(--text-dim);font-variant-numeric:tabular-nums;
 }
 /* LAYERS */
 #layers-area{
-flex:0 1 auto;max-height:45vh;overflow-y:auto;overflow-x:hidden;
+flex:0 1 auto;max-height:40vh;overflow-y:auto;overflow-x:hidden;
 background:rgba(13,13,13,0.85);-webkit-backdrop-filter:blur(16px);backdrop-filter:blur(16px);
 border-top:1px solid var(--accent);border-left:1px solid var(--accent);border-right:1px solid var(--accent);border-radius:12px 12px 0 0;
 -webkit-overflow-scrolling:touch;z-index:2;
@@ -152,6 +152,10 @@ color:var(--text-dim);font-size:13px;padding:24px;
 display:flex;flex-direction:column;padding:10px 12px;
 border-bottom:1px solid var(--accent);gap:6px;
 }
+.layer-strip.collapsed .step-grid,
+.layer-strip.collapsed .layer-controls,
+.layer-strip.collapsed .synth-panel{display:none!important}
+.layer-name{cursor:pointer}
 .layer-header{display:flex;align-items:center;gap:8px}
 .layer-color{width:10px;height:10px;border-radius:50%;flex-shrink:0}
 .layer-name{font-size:12px;font-weight:600;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -240,14 +244,11 @@ min-height:32px;display:flex;align-items:center;
 <span id="bpm-display">90</span>
 <div class="scene-sel" id="scene-sel"></div>
 <button class="transport-btn" id="dup-scene-btn" title="Duplicate Scene">+S</button>
-<button class="transport-btn" id="room-btn">Room</button>
-<span id="room-status"></span>
-<div id="room-mix" style="display:none;align-items:center;gap:4px">
-<span style="font-size:10px;color:var(--text-dim)">Wet</span>
-<input type="range" id="room-mix-slider" min="0" max="100" value="50" style="width:60px;height:36px;accent-color:var(--accent)">
-<span id="room-mix-val" style="font-size:10px;color:var(--text-dim);min-width:28px">50%</span>
+<div id="room-wrap" style="display:flex;align-items:center;gap:4px;margin-left:auto">
+<button class="transport-btn" id="room-btn" style="font-size:11px;padding:4px 8px;min-width:auto">Room</button>
+<span id="room-status" style="font-size:10px;display:none"></span>
+<input type="range" id="room-mix-slider" min="0" max="100" value="50" style="display:none;width:50px;height:36px;accent-color:var(--accent)">
 </div>
-<span id="ai-status"></span>
 </div>
 <div id="center">
 <div id="pulse-wave"></div>
@@ -311,10 +312,7 @@ const sceneSel = document.getElementById('scene-sel');
 const dupSceneBtn = document.getElementById('dup-scene-btn');
 const roomBtn = document.getElementById('room-btn');
 const roomStatus = document.getElementById('room-status');
-const roomMixEl = document.getElementById('room-mix');
 const roomMixSlider = document.getElementById('room-mix-slider');
-const roomMixVal = document.getElementById('room-mix-val');
-const aiStatus = document.getElementById('ai-status');
 const beatRing = document.getElementById('beat-ring');
 const pulseWave = document.getElementById('pulse-wave');
 const flowBtn = document.getElementById('flow-btn');
@@ -606,12 +604,8 @@ if (navigator.permissions && navigator.permissions.query) {
 
 // ===== AI LOADING =====
 async function loadAI() {
-  if (typeof mm === 'undefined') {
-    aiStatus.textContent = 'AI: unavailable';
-    return;
-  }
+  if (typeof mm === 'undefined') return;
   aiLoading = true;
-  aiStatus.textContent = 'AI: loading...';
   try {
     drumRNN = new mm.MusicRNN('https://storage.googleapis.com/magentadata/js/checkpoints/music_rnn/drum_kit_rnn');
     await drumRNN.initialize();
@@ -628,8 +622,6 @@ async function loadAI() {
   }
   aiLoading = false;
   aiReady = (drumRNN !== null || melodyRNN !== null);
-  aiStatus.textContent = aiReady ? 'AI: ready' : 'AI: unavailable';
-  if (aiReady) aiStatus.style.color = '#0a0';
 }
 
 // ===== STATE =====
@@ -1244,9 +1236,7 @@ async function suggestMelodyPattern(layer) {
 // ===== ROOM REVERB CAPTURE =====
 roomBtn.addEventListener('pointerdown', captureRoom);
 roomMixSlider.addEventListener('input', () => {
-  const val = parseInt(roomMixSlider.value);
-  roomMixVal.textContent = val + '%';
-  if (roomGain) roomGain.gain.value = val / 100;
+  if (roomGain) roomGain.gain.value = parseInt(roomMixSlider.value) / 100;
 });
 
 async function captureRoom() {
@@ -1311,10 +1301,10 @@ async function captureRoom() {
       }
     });
 
-    roomStatus.textContent = '\u2713';
-    roomStatus.style.display = 'inline';
-    roomStatus.style.color = '#0a0';
-    roomMixEl.style.display = 'flex';
+    roomBtn.textContent = '\u2713';
+    roomBtn.style.borderColor = '#0a0';
+    roomBtn.style.color = '#0a0';
+    roomMixSlider.style.display = 'block';
   } catch(e) {
     console.error('Room capture failed:', e);
     roomStatus.textContent = 'Failed';
@@ -1324,12 +1314,15 @@ async function captureRoom() {
 }
 
 // ===== LAYER RENDERING =====
+const expandedLayers = new Set();
+
 function renderAllLayers() {
-  layersArea.innerHTML = '';
+  while (layersArea.firstChild) layersArea.removeChild(layersArea.firstChild);
   const scene = currentScene();
   scene.layers.forEach((layer, idx) => {
     const strip = document.createElement('div');
-    strip.className = 'layer-strip';
+    const isExpanded = expandedLayers.has(layer.id);
+    strip.className = 'layer-strip' + (isExpanded ? '' : ' collapsed');
     strip.style.setProperty('--layer-color', layer.color);
 
     // Header row
@@ -1343,8 +1336,13 @@ function renderAllLayers() {
 
     const nameEl = document.createElement('div');
     nameEl.className = 'layer-name';
-    nameEl.textContent = layer.name;
+    nameEl.textContent = layer.name + (isExpanded ? ' \u25B4' : ' \u25BE');
     nameEl.style.color = layer.color;
+    nameEl.addEventListener('click', () => {
+      if (expandedLayers.has(layer.id)) expandedLayers.delete(layer.id);
+      else expandedLayers.add(layer.id);
+      renderAllLayers();
+    });
     header.appendChild(nameEl);
 
     // Pitch display (tonal) or type badge (perc)
