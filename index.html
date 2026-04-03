@@ -101,17 +101,26 @@ animation:pulse-expand 0.8s ease-out forwards;
 #flow-btn{
 position:relative;z-index:10;width:200px;height:200px;border-radius:50%;
 background:radial-gradient(circle,#111 0%,#0a0a0a 100%);
-border:none;cursor:pointer;
+border:3px solid transparent;cursor:pointer;
 display:flex;align-items:center;justify-content:center;flex-direction:column;
-touch-action:none;transition:border-color 0.2s,box-shadow 0.2s;
+touch-action:none;transition:border-color 0.15s,box-shadow 0.15s,transform 0.15s,background 0.15s;
 -webkit-user-select:none;user-select:none;-webkit-touch-callout:none;
 }
 #flow-btn.recording{
 border-color:var(--record);
-box-shadow:0 0 30px rgba(255,50,50,0.3),0 0 60px rgba(255,50,50,0.1);
+background:radial-gradient(circle,#2a0505 0%,#1a0000 100%);
+box-shadow:0 0 40px rgba(255,50,50,0.5),0 0 80px rgba(255,50,50,0.25),0 0 120px rgba(255,50,50,0.1),inset 0 0 30px rgba(255,50,50,0.15);
+transform:scale(1.06);
+animation:recording-pulse 1s ease-in-out infinite;
 }
-#flow-btn.processing{border-color:#fa0}
-#flow-label{font-size:13px;font-weight:600;pointer-events:none;color:var(--text)}
+@keyframes recording-pulse{
+0%{box-shadow:0 0 40px rgba(255,50,50,0.5),0 0 80px rgba(255,50,50,0.25),0 0 120px rgba(255,50,50,0.1),inset 0 0 30px rgba(255,50,50,0.15)}
+50%{box-shadow:0 0 60px rgba(255,50,50,0.7),0 0 100px rgba(255,50,50,0.35),0 0 160px rgba(255,50,50,0.15),inset 0 0 40px rgba(255,50,50,0.25)}
+100%{box-shadow:0 0 40px rgba(255,50,50,0.5),0 0 80px rgba(255,50,50,0.25),0 0 120px rgba(255,50,50,0.1),inset 0 0 30px rgba(255,50,50,0.15)}
+}
+#flow-btn.processing{border-color:#fa0;box-shadow:0 0 30px rgba(255,170,0,0.3)}
+#flow-label{font-size:14px;font-weight:700;pointer-events:none;color:var(--text);transition:color 0.15s}
+#flow-btn.recording #flow-label{color:var(--record)}
 #flow-sub{font-size:10px;color:var(--text-dim);pointer-events:none;margin-top:4px}
 #intent-ring{
 position:absolute;width:300px;height:300px;pointer-events:none;z-index:11;
