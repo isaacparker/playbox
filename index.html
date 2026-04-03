@@ -1120,15 +1120,21 @@ function analyzeStepAudio(data, sr, intentId) {
   const notes = new Array(16).fill(null);
   const durations = new Array(16).fill('16n');
 
-  // Intent-aware settings
+  // Intent-aware settings: threshold, min gap, max steps
+  const settings = {
+    kick:  { threshold: 0.5,  minGap: 3, maxSteps: 4 },
+    snare: { threshold: 0.4,  minGap: 2, maxSteps: 6 },
+    hat:   { threshold: 0.25, minGap: 1, maxSteps: 16 },
+    bass:  { threshold: 0.3,  minGap: 1, maxSteps: 10 },
+    lead:  { threshold: 0.3,  minGap: 1, maxSteps: 12 },
+    pad:   { threshold: 0.55, minGap: 4, maxSteps: 4 },
+  };
+  const s_cfg = settings[intentId] || { threshold: 0.3, minGap: 1, maxSteps: 12 };
+  const energyThreshold = s_cfg.threshold;
+  const minGap = s_cfg.minGap;
+  const maxSteps = s_cfg.maxSteps;
   const isPerc = intentId === 'kick' || intentId === 'snare' || intentId === 'hat';
   const isPad = intentId === 'pad';
-  // Higher threshold = fewer steps. Percussive needs sharp transients only.
-  const energyThreshold = isPerc ? 0.5 : isPad ? 0.6 : 0.35;
-  // Minimum gap between hits (in steps)
-  const minGap = isPerc ? 2 : isPad ? 4 : 1;
-  // Max active steps
-  const maxSteps = isPerc ? 6 : isPad ? 4 : 12;
 
   // 1. Compute RMS energy per step
   const stepEnergies = [];
