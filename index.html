@@ -902,6 +902,10 @@ async function processRecording() {
   createSynthForLayer(layer);
   currentScene().layers.push(layer);
 
+  // Show only the new layer expanded
+  expandedLayers.clear();
+  expandedLayers.add(layer.id);
+
   // Update global scale from all layers
   updateGlobalScale();
   if (globalScale) {
