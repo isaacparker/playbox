@@ -221,9 +221,10 @@ font-size:7px;color:rgba(0,0,0,0.6);pointer-events:none;font-weight:700;line-hei
 display:flex;gap:3px;flex-wrap:wrap;align-items:center;padding:4px 0;
 }
 .note-picker .note-btn{
-font-size:10px;padding:3px 6px;background:var(--surface3);color:var(--text-dim);
+font-size:10px;background:var(--surface3);color:var(--text-dim);
 border:1px solid var(--border);border-radius:6px;cursor:pointer;touch-action:none;
-min-height:28px;display:flex;align-items:center;
+width:32px;height:32px;display:flex;align-items:center;justify-content:center;
+flex-shrink:0;padding:0;
 }
 .note-picker .note-btn.active{color:var(--text);border-color:var(--layer-color,#0ff);background:rgba(0,255,255,0.08)}
 .scale-badge{font-size:10px;color:var(--accent);padding:2px 6px;background:rgba(0,255,255,0.08);border-radius:4px;white-space:nowrap}
@@ -1052,6 +1053,7 @@ function getScaleNoteNames(scale, octave) {
 }
 
 function updateGlobalScale() {
+  if (globalScale) return; // Once locked, stay locked
   const allNotes = [];
   currentScene().layers.forEach(l => {
     if (l.notes) l.notes.forEach(n => { if (n) allNotes.push(n); });
@@ -1709,7 +1711,8 @@ function renderAllLayers() {
       const noteChips = document.createElement('div');
       noteChips.className = 'osc-chips note-chips';
       const currentNoteName = layer.note.replace(/\d+$/, '');
-      NOTE_NAMES.forEach(n => {
+      const pitchNotes = globalScale ? globalScale.notes.map(pc => NOTE_NAMES[pc]) : NOTE_NAMES;
+      pitchNotes.forEach(n => {
         const chip = document.createElement('button');
         chip.className = 'osc-chip' + (n === currentNoteName ? ' active' : '');
         chip.textContent = n;
