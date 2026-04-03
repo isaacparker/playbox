@@ -150,10 +150,11 @@ display:grid;grid-template-columns:repeat(16,1fr);gap:3px;
 }
 .step-cell{
 aspect-ratio:1;min-width:18px;min-height:18px;border-radius:4px;
-background:var(--surface3);border:1px solid var(--border);cursor:pointer;
-touch-action:none;position:relative;transition:background 0.1s;
+background:color-mix(in srgb, var(--layer-color,#0ff) 12%, transparent);
+border:1px solid var(--layer-color,#0ff);cursor:pointer;
+touch-action:none;position:relative;transition:background 0.08s;
 }
-.step-cell.on{background:var(--layer-color,#0ff);border-color:var(--layer-color,#0ff)}
+.step-cell.on{background:var(--layer-color,#0ff)}
 .step-cell.ghost{
 background:transparent;
 border:1px dashed var(--layer-color,#0ff);
@@ -1376,38 +1377,22 @@ function renderAllLayers() {
       cell.className = 'step-cell';
       cell.style.touchAction = 'none';
       cell.dataset.step = s;
-      if (layer.steps[s]) {
-        cell.classList.add('on');
-        cell.style.background = layer.color;
-        cell.style.borderColor = layer.color;
-      } else if (layer.ghostSteps[s]) {
-        cell.classList.add('ghost');
-        cell.style.borderColor = layer.color;
-      }
+      if (layer.steps[s]) cell.classList.add('on');
+      else if (layer.ghostSteps[s]) cell.classList.add('ghost');
       if (s === currentStep) cell.classList.add('current');
       cell.addEventListener('pointerdown', (e) => {
         e.preventDefault();
         if (layer.steps[s]) {
-          // Remove step
           layer.steps[s] = false;
           cell.classList.remove('on');
-          cell.style.background = '';
-          cell.style.borderColor = 'var(--border)';
         } else if (layer.ghostSteps[s]) {
-          // Accept ghost step
           layer.ghostSteps[s] = false;
           layer.steps[s] = true;
           cell.classList.remove('ghost');
           cell.classList.add('on');
-          cell.style.background = layer.color;
-          cell.style.borderColor = layer.color;
-          cell.style.opacity = '1';
         } else {
-          // Add new step
           layer.steps[s] = true;
           cell.classList.add('on');
-          cell.style.background = layer.color;
-          cell.style.borderColor = layer.color;
         }
       });
       grid.appendChild(cell);
