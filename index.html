@@ -36,7 +36,7 @@ flex-direction:column;gap:16px;
 }
 #overlay .start-btn{
 font-size:24px;color:var(--accent);background:none;border:2px solid var(--accent);
-border-radius:50%;width:260px;height:260px;cursor:pointer;
+border-radius:50%;width:300px;height:300px;cursor:pointer;
 display:flex;align-items:center;justify-content:center;
 transition:transform 0.2s;
 }
@@ -80,14 +80,14 @@ flex:1;display:flex;align-items:center;justify-content:center;
 position:relative;min-height:200px;
 }
 #beat-ring{
-position:absolute;width:260px;height:260px;pointer-events:none;
+position:absolute;width:300px;height:300px;pointer-events:none;
 }
 #beat-ring .seg-bg{fill:rgba(0,255,255,0.12);stroke:none;transition:fill 0.08s}
 #beat-ring .seg-bg.active{fill:rgba(0,255,255,1)}
 #beat-ring .divider{stroke:var(--accent);stroke-width:1}
 #beat-ring .ring-edge{fill:none;stroke:var(--accent);stroke-width:1}
 #pulse-wave{
-position:absolute;width:260px;height:260px;border-radius:50%;
+position:absolute;width:300px;height:300px;border-radius:50%;
 border:2px solid var(--accent);opacity:0;pointer-events:none;
 transform:scale(1);
 }
@@ -99,7 +99,7 @@ animation:pulse-expand 0.8s ease-out forwards;
 100%{opacity:0;transform:scale(1.8)}
 }
 #flow-btn{
-position:relative;z-index:10;width:170px;height:170px;border-radius:50%;
+position:relative;z-index:10;width:200px;height:200px;border-radius:50%;
 background:radial-gradient(circle,#111 0%,#0a0a0a 100%);
 border:none;cursor:pointer;
 display:flex;align-items:center;justify-content:center;flex-direction:column;
@@ -231,7 +231,7 @@ min-height:32px;display:flex;align-items:center;
 </div>
 <div id="center">
 <div id="pulse-wave"></div>
-<svg id="beat-ring" viewBox="0 0 260 260"></svg>
+<svg id="beat-ring" viewBox="0 0 300 300"></svg>
 <button id="flow-btn">
 <span id="flow-label">Hold to Record</span>
 <span id="flow-sub">voice &rarr; synth</span>
@@ -321,7 +321,7 @@ function arcPath(cx, cy, rOuter, rInner, startAngle, endAngle) {
 function createBeatSegments() {
   while (beatRing.firstChild) beatRing.removeChild(beatRing.firstChild);
   var ns = 'http://www.w3.org/2000/svg';
-  var cx = 130, cy = 130, rOuter = 128, rInner = 85;
+  var cx = 150, cy = 150, rOuter = 148, rInner = 100;
 
   // Filled segments (bottom layer)
   for (var i = 0; i < 16; i++) {
