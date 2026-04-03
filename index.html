@@ -530,15 +530,25 @@ async function initAudio() {
                 Math.max(20, l.filterCutoff), time + (l.envDecay || 0.1)
               );
             }
+            const dur = (l.durations && l.durations[step]) || '16n';
             if (l.isPercussive) {
-              l.synth.triggerAttackRelease('16n', time);
+              l.synth.triggerAttackRelease(dur, time);
             } else {
-              const pn = getPlaybackNote(l) || 'C4';
-              l.synth.triggerAttackRelease(pn, '16n', time);
-              if (l.synth2) l.synth2.triggerAttackRelease(pn, '16n', time);
+              // Per-step note, with octave offset applied
+              let pn;
+              if (l.notes && l.notes[step]) {
+                const n = l.notes[step];
+                const name = n.replace(/\d+$/, '');
+                const oct = parseInt(n.match(/\d+$/)[0]) + (l.octave || 0);
+                pn = name + Math.max(0, Math.min(8, oct));
+              } else {
+                pn = getPlaybackNote(l) || 'C4';
+              }
+              l.synth.triggerAttackRelease(pn, dur, time);
+              if (l.synth2) l.synth2.triggerAttackRelease(pn, dur, time);
               if (l.subOsc) {
                 const subNote = Tone.Frequency(pn).transpose(-12).toNote();
-                l.subOsc.triggerAttackRelease(subNote, '16n', time);
+                l.subOsc.triggerAttackRelease(subNote, dur, time);
               }
             }
           } catch(e) {}
@@ -728,17 +738,18 @@ async function processRecording() {
   const channelData = audioBuffer.getChannelData(0);
   const sampleRate = audioBuffer.sampleRate;
 
-  // 1. Check user intent or auto-detect
+  // 1. Per-step analysis: onsets, pitch per step, durations
+  const analysis = analyzeStepAudio(channelData, sampleRate);
+
+  // 2. Determine synth character from intent or auto-detect
   const intent = getSelectedIntent();
   const spectrum = analyzeSpectrum(channelData, sampleRate);
   const brightness = spectrum.brightness;
 
-  let isPercussive, detectedFreq = 0, note = 'A3';
-  let oscType, filterCutoff, filterQ, envAttack, envDecay, envSustain, envRelease, layerName;
-  let driveAmount = 0, filtEnvAmount = 0;
+  let isPercussive, oscType, filterCutoff, filterQ, envAttack, envDecay, envSustain, envRelease;
+  let driveAmount = 0, filtEnvAmount = 0, layerName;
 
   if (intent) {
-    // User declared intent — use preset synth params, still detect pitch/rhythm from audio
     isPercussive = intent.perc;
     oscType = intent.osc;
     filterCutoff = intent.filter;
@@ -749,19 +760,9 @@ async function processRecording() {
     envRelease = intent.release;
     driveAmount = intent.drive || 0;
     filtEnvAmount = intent.filtEnv || 0;
-
-    if (!isPercussive) {
-      detectedFreq = detectPitch(channelData, sampleRate);
-      note = quantizeToNote(detectedFreq);
-    }
     layerName = intent.label;
   } else {
-    // Auto-detect from audio
     isPercussive = spectrum.isPercussive;
-    // Always try pitch detection — even percussive sounds have a fundamental
-    detectedFreq = detectPitch(channelData, sampleRate);
-    if (detectedFreq > 0) note = quantizeToNote(detectedFreq);
-    // Map brightness to synth character
     filterQ = 1;
     if (isPercussive) {
       oscType = brightness > 0.5 ? 'white' : 'brown';
@@ -781,22 +782,20 @@ async function processRecording() {
       envSustain = 0.2 + (1 - brightness) * 0.5;
       envRelease = 0.1 + (1 - brightness) * 0.3;
     }
-    layerName = (isPercussive ? 'Perc ' : '') + note;
+    layerName = analysis.fallbackNote;
   }
 
-  // 2. Detect transients and map to 16-step grid
-  const steps = detectTransients(channelData, sampleRate);
-
-  // 3. Create layer
+  // 3. Create layer with per-step notes and durations
   const layerIdx = currentScene().layers.length;
   const color = LAYER_COLORS[layerIdx % LAYER_COLORS.length];
   const layer = {
     id: Date.now(),
     name: layerName,
     isPercussive,
-    note,
-    detectedFreq,
-    steps: steps,
+    note: analysis.fallbackNote,
+    notes: analysis.notes,
+    durations: analysis.durations,
+    steps: analysis.steps,
     ghostSteps: new Array(16).fill(false),
     color,
     volume: 0.8,
@@ -882,35 +881,11 @@ function analyzeSpectrum(data, sr) {
   return { isPercussive: flatness > 0.3, brightness };
 }
 
-// ===== PITCH DETECTION (multi-pass YIN) =====
-function detectPitch(data, sr) {
-  // Try multiple windows across the loudest region for best result
-  const windowSize = Math.min(data.length, 8192);
-  const loudStart = findLoudestRegion(data, windowSize);
-
-  // Try 3 overlapping windows around the loudest point
-  const offsets = [0, Math.floor(windowSize / 4), Math.floor(windowSize / 2)];
-  const candidates = [];
-
-  for (const offset of offsets) {
-    const start = Math.min(loudStart + offset, data.length - windowSize);
-    if (start < 0) continue;
-    const freq = yinPitch(data.slice(start, start + windowSize), sr);
-    if (freq > 0) candidates.push(freq);
-  }
-
-  if (candidates.length === 0) return 220;
-
-  // Return the median candidate for stability
-  candidates.sort((a, b) => a - b);
-  return candidates[Math.floor(candidates.length / 2)];
-}
-
+// ===== PITCH DETECTION (YIN with confidence) =====
 function yinPitch(buf, sr) {
   const halfSize = Math.floor(buf.length / 2);
+  if (halfSize < 2) return { freq: 0, confidence: 0 };
   const diff = new Float32Array(halfSize);
-
-  // Difference function
   for (let tau = 0; tau < halfSize; tau++) {
     let sum = 0;
     for (let i = 0; i < halfSize; i++) {
@@ -919,119 +894,153 @@ function yinPitch(buf, sr) {
     }
     diff[tau] = sum;
   }
-
-  // Cumulative mean normalized difference
   diff[0] = 1;
   let runningSum = 0;
   for (let tau = 1; tau < halfSize; tau++) {
     runningSum += diff[tau];
     diff[tau] = diff[tau] * tau / runningSum;
   }
-
-  // Progressively relax threshold to find best match
-  const minPeriod = Math.floor(sr / 1200); // up to 1200 Hz
-  const maxPeriod = Math.floor(sr / 50);   // down to 50 Hz
-  const thresholds = [0.15, 0.25, 0.4, 0.6];
-
-  for (const threshold of thresholds) {
-    for (let tau = minPeriod; tau < Math.min(halfSize, maxPeriod); tau++) {
-      if (diff[tau] < threshold) {
-        // Refine: find local minimum
-        while (tau + 1 < halfSize && diff[tau + 1] < diff[tau]) tau++;
-        // Parabolic interpolation for sub-sample accuracy
-        if (tau > 0 && tau < halfSize - 1) {
-          const a = diff[tau - 1], b = diff[tau], c = diff[tau + 1];
-          const shift = (a - c) / (2 * (a - 2 * b + c));
-          if (Math.abs(shift) < 1) {
-            return sr / (tau + shift);
-          }
-        }
-        return sr / tau;
-      }
-    }
+  const minP = Math.floor(sr / 1000);
+  const maxP = Math.floor(sr / 60);
+  let bestTau = -1, bestVal = 1;
+  for (let tau = minP; tau < Math.min(halfSize, maxP); tau++) {
+    if (diff[tau] < bestVal) { bestVal = diff[tau]; bestTau = tau; }
+    if (diff[tau] < 0.3 && bestTau > 0) break;
   }
-
-  return 0; // no pitch found
+  if (bestTau < 0 || bestVal > 0.6) return { freq: 0, confidence: 0 };
+  return { freq: sr / bestTau, confidence: 1 - bestVal };
 }
 
 // ===== QUANTIZE TO CHROMATIC NOTE =====
 const NOTE_NAMES = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
+function freqToMidi(freq) {
+  if (freq <= 0) return 0;
+  return Math.round(12 * Math.log2(freq / 440) + 69);
+}
+function midiToNote(midi) {
+  const clamped = Math.max(24, Math.min(96, midi));
+  return NOTE_NAMES[clamped % 12] + (Math.floor(clamped / 12) - 1);
+}
 function quantizeToNote(freq) {
   if (freq <= 0) return 'A3';
-  // MIDI note from frequency: A4 = 440Hz = MIDI 69
-  const midi = Math.round(12 * Math.log2(freq / 440) + 69);
-  const clamped = Math.max(24, Math.min(96, midi)); // C1 to C7
-  const name = NOTE_NAMES[clamped % 12];
-  const oct = Math.floor(clamped / 12) - 1;
-  return name + oct;
+  return midiToNote(freqToMidi(freq));
 }
 
-// ===== TRANSIENT DETECTION (onset-based) =====
-function detectTransients(data, sr) {
-  const steps = new Array(16).fill(false);
+// ===== PER-STEP AUDIO ANALYSIS =====
+// Detects onsets, pitch per step, and duration — the core of voice-to-sequence
+function analyzeStepAudio(data, sr) {
   const barDuration = (60 / currentBPM) * 4;
   const stepDuration = barDuration / 16;
-  const recordingDuration = data.length / sr;
+  const steps = new Array(16).fill(false);
+  const notes = new Array(16).fill(null);
+  const durations = new Array(16).fill('16n');
 
-  // 1. Compute energy envelope with small hop
-  const hopSize = Math.floor(sr * 0.005); // 5ms hops
-  const frameSize = Math.floor(sr * 0.01); // 10ms frames
-  const numFrames = Math.floor((data.length - frameSize) / hopSize);
-  const energy = new Float32Array(numFrames);
-  for (let f = 0; f < numFrames; f++) {
+  // 1. Compute RMS energy per step
+  const stepEnergies = [];
+  for (let s = 0; s < 16; s++) {
+    const startSamp = Math.floor((s * stepDuration) * sr);
+    const endSamp = Math.floor(((s + 1) * stepDuration) * sr);
+    if (startSamp >= data.length) { stepEnergies.push(0); continue; }
     let sum = 0;
-    const start = f * hopSize;
-    for (let i = start; i < start + frameSize && i < data.length; i++) {
-      sum += data[i] * data[i];
-    }
-    energy[f] = sum / frameSize;
+    const end = Math.min(endSamp, data.length);
+    for (let i = startSamp; i < end; i++) sum += data[i] * data[i];
+    stepEnergies.push(Math.sqrt(sum / Math.max(end - startSamp, 1)));
   }
 
-  // 2. Compute spectral flux (energy derivative) — detect onsets
-  const flux = new Float32Array(numFrames);
-  for (let f = 1; f < numFrames; f++) {
-    const diff = energy[f] - energy[f - 1];
-    flux[f] = diff > 0 ? diff : 0; // half-wave rectify
-  }
-
-  // 3. Adaptive threshold: median + factor
-  const sorted = Array.from(flux).sort((a, b) => a - b);
-  const median = sorted[Math.floor(sorted.length * 0.75)] || 0;
-  const threshold = median * 3 + 0.0001;
-
-  // 4. Find onset times
-  const onsets = [];
-  const minGapFrames = Math.floor(stepDuration * 0.4 * sr / hopSize); // min gap between onsets
-  let lastOnset = -minGapFrames;
-  for (let f = 1; f < numFrames; f++) {
-    if (flux[f] > threshold && (f - lastOnset) >= minGapFrames) {
-      const timeSec = (f * hopSize) / sr;
-      if (timeSec < barDuration) {
-        onsets.push(timeSec);
-        lastOnset = f;
-      }
+  // 2. Find active steps — energy above adaptive threshold
+  const maxEnergy = Math.max(...stepEnergies);
+  const threshold = maxEnergy * 0.2;
+  for (let s = 0; s < 16; s++) {
+    if (stepEnergies[s] > threshold && s * stepDuration * sr < data.length) {
+      steps[s] = true;
     }
   }
+  if (!steps.some(s => s)) {
+    const maxIdx = stepEnergies.indexOf(maxEnergy);
+    if (maxIdx >= 0) steps[maxIdx] = true;
+  }
 
-  // 5. Quantize each onset to nearest step
-  onsets.forEach(t => {
-    const stepFloat = t / stepDuration;
-    const step = Math.round(stepFloat) % 16;
-    steps[step] = true;
+  // 3. Detect onset steps — where energy jumps significantly (these are the "hits")
+  const onsetSteps = [];
+  for (let s = 0; s < 16; s++) {
+    if (!steps[s]) continue;
+    const prev = s > 0 ? stepEnergies[s - 1] : 0;
+    const ratio = prev > 0 ? stepEnergies[s] / prev : 10;
+    if (ratio > 1.5 || s === 0 || !steps[s - 1]) {
+      onsetSteps.push(s);
+    }
+  }
+  // If no clear onsets, treat all active steps as onsets
+  if (onsetSteps.length === 0) {
+    for (let s = 0; s < 16; s++) if (steps[s]) onsetSteps.push(s);
+  }
+
+  // 4. Pitch-detect each onset from the sustained portion after the attack
+  const pitchResults = []; // {step, freq, confidence, midi}
+  const yinWindow = Math.min(Math.floor(stepDuration * sr), 4096);
+  onsetSteps.forEach(s => {
+    // Skip the first 10% of the step (attack transient), analyze the rest
+    const attackSkip = Math.floor(stepDuration * sr * 0.1);
+    const startSamp = Math.floor(s * stepDuration * sr) + attackSkip;
+    const endSamp = Math.min(startSamp + yinWindow, data.length);
+    if (endSamp - startSamp < 256) {
+      pitchResults.push({ step: s, freq: 0, confidence: 0, midi: 0 });
+      return;
+    }
+    const slice = data.slice(startSamp, endSamp);
+    const result = yinPitch(slice, sr);
+    const midi = result.freq > 0 ? freqToMidi(result.freq) : 0;
+    pitchResults.push({ step: s, freq: result.freq, confidence: result.confidence, midi });
   });
 
-  // Ensure at least one step
-  if (!steps.some(s => s)) {
-    // Fall back to loudest region
-    let maxE = 0, maxIdx = 0;
-    for (let f = 0; f < numFrames; f++) {
-      if (energy[f] > maxE) { maxE = energy[f]; maxIdx = f; }
-    }
-    const t = (maxIdx * hopSize) / sr;
-    steps[Math.round(t / stepDuration) % 16] = true;
+  // 5. Find key center from high-confidence detections
+  const confidentPitches = pitchResults.filter(p => p.confidence > 0.5 && p.midi > 0);
+  let fallbackMidi = 57; // A3
+  if (confidentPitches.length > 0) {
+    // Most common pitch class
+    const pitchCounts = {};
+    confidentPitches.forEach(p => {
+      const pc = p.midi % 12;
+      pitchCounts[pc] = (pitchCounts[pc] || 0) + p.confidence;
+    });
+    // Median midi for fallback octave
+    const sortedMidi = confidentPitches.map(p => p.midi).sort((a, b) => a - b);
+    fallbackMidi = sortedMidi[Math.floor(sortedMidi.length / 2)];
   }
 
-  return steps;
+  // 6. Assign notes — confident detections keep their pitch, others get normalized
+  pitchResults.forEach(p => {
+    if (p.confidence > 0.4 && p.midi > 0) {
+      notes[p.step] = midiToNote(p.midi);
+    } else {
+      notes[p.step] = midiToNote(fallbackMidi);
+    }
+  });
+
+  // 7. Compute durations — a hit sustains until energy drops or next onset
+  for (let i = 0; i < onsetSteps.length; i++) {
+    const s = onsetSteps[i];
+    const nextOnset = i + 1 < onsetSteps.length ? onsetSteps[i + 1] : 16;
+    // Count how many consecutive steps stay active
+    let dur = 1;
+    for (let j = s + 1; j < nextOnset && j < 16; j++) {
+      if (steps[j] && stepEnergies[j] > threshold * 0.5) dur++;
+      else break;
+    }
+    // Map step count to Tone.js duration
+    if (dur >= 4) durations[s] = '4n';
+    else if (dur >= 2) durations[s] = '8n';
+    else durations[s] = '16n';
+  }
+
+  // Fill notes for non-onset active steps (sustained from previous)
+  let lastNote = null;
+  for (let s = 0; s < 16; s++) {
+    if (steps[s] && notes[s]) lastNote = notes[s];
+    else if (steps[s] && !notes[s] && lastNote) notes[s] = lastNote;
+  }
+
+  return { steps, notes, durations, onsetSteps, fallbackNote: midiToNote(fallbackMidi) };
 }
 
 // ===== PITCH HELPERS =====
