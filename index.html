@@ -227,7 +227,7 @@ width:32px;height:32px;display:flex;align-items:center;justify-content:center;
 flex-shrink:0;padding:0;
 }
 .note-picker .note-btn.active{color:var(--text);border-color:var(--layer-color,#0ff);background:rgba(0,255,255,0.08)}
-.scale-badge{font-size:10px;color:var(--accent);padding:2px 6px;background:rgba(0,255,255,0.08);border-radius:4px;white-space:nowrap}
+.scale-badge{font-size:11px;font-weight:600;color:var(--accent);padding:4px 8px;background:rgba(0,255,255,0.1);border:1px solid rgba(0,255,255,0.25);border-radius:6px;white-space:nowrap}
 .layer-controls{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 .layer-slider-group{display:flex;align-items:center;gap:4px;flex:1;min-width:100px}
 .layer-slider-group label{font-size:10px;color:var(--text-dim);min-width:24px}
@@ -909,14 +909,12 @@ async function processRecording() {
 
   // Update global scale from all layers
   updateGlobalScale();
-  if (globalScale) {
-    scaleBadge.textContent = getScaleLabel();
-    scaleBadge.style.display = 'inline';
-    // Quantize this layer's notes to scale
-    if (layer.notes && !layer.isPercussive) {
-      for (let s = 0; s < 16; s++) {
-        if (layer.notes[s]) layer.notes[s] = snapToScale(layer.notes[s]);
-      }
+  scaleBadge.style.display = 'inline';
+  scaleBadge.textContent = globalScale ? getScaleLabel() : 'Chromatic';
+  // Quantize this layer's notes to scale
+  if (globalScale && layer.notes && !layer.isPercussive) {
+    for (let s = 0; s < 16; s++) {
+      if (layer.notes[s]) layer.notes[s] = snapToScale(layer.notes[s]);
     }
   }
 
