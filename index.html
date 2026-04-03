@@ -81,14 +81,12 @@ position:absolute;width:200px;height:200px;border-radius:50%;
 border:2px solid var(--border);transition:none;pointer-events:none;
 }
 #metronome-ring.pulse{border-color:var(--accent);box-shadow:0 0 20px rgba(0,255,255,0.15)}
-#beat-dots{
+#beat-ring{
 position:absolute;width:200px;height:200px;pointer-events:none;
 }
-.beat-dot{
-position:absolute;width:8px;height:8px;border-radius:50%;background:var(--border);
-transform:translate(-50%,-50%);transition:background 0.1s;
-}
-.beat-dot.active{background:var(--accent)}
+#beat-ring .seg{fill:none;stroke:var(--border);stroke-width:4;stroke-linecap:butt;transition:stroke 0.08s}
+#beat-ring .seg.active{stroke:var(--accent)}
+#beat-ring .seg.on{stroke:var(--accent);opacity:0.35}
 #flow-btn{
 position:relative;z-index:10;width:150px;height:150px;border-radius:50%;
 background:radial-gradient(circle,#111 0%,#0a0a0a 100%);
@@ -124,6 +122,14 @@ border-bottom:1px solid var(--border);gap:6px;
 .layer-color{width:10px;height:10px;border-radius:50%;flex-shrink:0}
 .layer-name{font-size:12px;font-weight:600;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .layer-type{font-size:10px;color:var(--text-dim);background:var(--surface2);padding:2px 6px;border-radius:4px}
+.pitch-ctrl{display:flex;align-items:center;gap:2px}
+.pitch-ctrl .oct-btn{
+min-width:28px;min-height:28px;background:var(--surface2);color:var(--text-dim);
+border:1px solid var(--border);border-radius:4px;font-size:13px;cursor:pointer;
+display:flex;align-items:center;justify-content:center;touch-action:none;
+font-weight:700;line-height:1;
+}
+.pitch-ctrl .oct-btn:active{border-color:var(--accent);color:var(--accent)}
 .layer-btn{
 min-width:36px;min-height:36px;background:var(--surface2);color:var(--text-dim);
 border:1px solid var(--border);border-radius:6px;font-size:11px;cursor:pointer;
@@ -159,16 +165,20 @@ display:flex;align-items:center;justify-content:center;touch-action:none;
 }
 .synth-toggle.open{color:var(--accent);border-color:var(--accent)}
 .synth-panel{
-display:none;flex-direction:column;gap:8px;padding:8px;
+display:none;flex-direction:column;gap:10px;padding:10px;
 background:var(--surface);border:1px solid var(--border);border-radius:6px;
 }
 .synth-panel.open{display:flex}
-.synth-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
-.synth-row label{font-size:10px;color:var(--text-dim);min-width:28px}
-.synth-row select{
-font-size:11px;background:var(--surface2);color:var(--text);
-border:1px solid var(--border);border-radius:4px;padding:4px 6px;min-height:36px;
+.synth-section-label{font-size:9px;color:var(--text-dim);text-transform:uppercase;letter-spacing:1px;margin-bottom:-4px}
+.osc-chips{display:flex;gap:4px;flex-wrap:wrap}
+.osc-chip{
+font-size:11px;padding:4px 10px;background:var(--surface2);color:var(--text-dim);
+border:1px solid var(--border);border-radius:12px;cursor:pointer;touch-action:none;
+min-height:32px;display:flex;align-items:center;
 }
+.osc-chip.active{color:var(--text);border-color:var(--layer-color,#0ff);background:rgba(255,255,255,0.05)}
+.synth-row{display:flex;align-items:center;gap:8px}
+.synth-row label{font-size:10px;color:var(--text-dim);min-width:28px}
 .synth-row input[type=range]{flex:1;height:36px;accent-color:var(--layer-color,#0ff)}
 .synth-row .val{font-size:10px;color:var(--text-dim);min-width:32px;text-align:right}
 /* SCROLLBAR */
@@ -198,7 +208,7 @@ border:1px solid var(--border);border-radius:4px;padding:4px 6px;min-height:36px
 </div>
 <div id="center">
 <div id="metronome-ring"></div>
-<div id="beat-dots"></div>
+<svg id="beat-ring" viewBox="0 0 200 200"></svg>
 <button id="flow-btn">
 <span id="flow-label">Hold to Record</span>
 <span id="flow-sub">voice &rarr; synth</span>
@@ -258,29 +268,33 @@ const roomBtn = document.getElementById('room-btn');
 const roomStatus = document.getElementById('room-status');
 const aiStatus = document.getElementById('ai-status');
 const metronomeRing = document.getElementById('metronome-ring');
-const beatDotsEl = document.getElementById('beat-dots');
+const beatRing = document.getElementById('beat-ring');
 const flowBtn = document.getElementById('flow-btn');
 const flowLabel = document.getElementById('flow-label');
 const flowSub = document.getElementById('flow-sub');
 const stepIndicator = document.getElementById('step-indicator');
 const layersArea = document.getElementById('layers-area');
 
-// ===== BEAT DOTS (16 around the ring) =====
-function createBeatDots() {
-  beatDotsEl.innerHTML = '';
+// ===== BEAT RING (16 arc segments) =====
+function createBeatSegments() {
+  while (beatRing.firstChild) beatRing.removeChild(beatRing.firstChild);
+  const cx = 100, cy = 100, r = 90;
+  const gap = 0.02; // radians gap between segments
   for (let i = 0; i < 16; i++) {
-    const dot = document.createElement('div');
-    dot.className = 'beat-dot';
-    const angle = (i / 16) * Math.PI * 2 - Math.PI / 2;
-    const cx = 100 + Math.cos(angle) * 90;
-    const cy = 100 + Math.sin(angle) * 90;
-    dot.style.left = cx + 'px';
-    dot.style.top = cy + 'px';
-    dot.dataset.step = i;
-    beatDotsEl.appendChild(dot);
+    const startAngle = (i / 16) * Math.PI * 2 - Math.PI / 2 + gap / 2;
+    const endAngle = ((i + 1) / 16) * Math.PI * 2 - Math.PI / 2 - gap / 2;
+    const x1 = cx + Math.cos(startAngle) * r;
+    const y1 = cy + Math.sin(startAngle) * r;
+    const x2 = cx + Math.cos(endAngle) * r;
+    const y2 = cy + Math.sin(endAngle) * r;
+    const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    path.setAttribute('d', 'M ' + x1 + ' ' + y1 + ' A ' + r + ' ' + r + ' 0 0 1 ' + x2 + ' ' + y2);
+    path.setAttribute('class', 'seg');
+    path.dataset.step = i;
+    beatRing.appendChild(path);
   }
 }
-createBeatDots();
+createBeatSegments();
 
 // ===== SCENE UI =====
 function renderScenes() {
@@ -374,7 +388,7 @@ async function initAudio() {
             if (l.isPercussive) {
               l.synth.triggerAttackRelease('16n', time);
             } else {
-              l.synth.triggerAttackRelease(l.note || 'C4', '16n', time);
+              l.synth.triggerAttackRelease(getPlaybackNote(l) || 'C4', '16n', time);
             }
           } catch(e) {}
         }
@@ -589,6 +603,8 @@ async function processRecording() {
     envDecay: isPercussive ? 0.15 : 0.3,
     envSustain: isPercussive ? 0 : 0.4,
     envRelease: isPercussive ? 0 : 0.2,
+    octave: 0,
+    synthOpen: false,
     synth: null,
     filter: null
   };
@@ -745,6 +761,15 @@ function detectTransients(data, sr) {
   }
 
   return steps;
+}
+
+// ===== PITCH HELPERS =====
+function getPlaybackNote(layer) {
+  if (layer.isPercussive) return null;
+  const base = layer.note || 'C4';
+  const name = base.replace(/\d+$/, '');
+  const oct = parseInt(base.match(/\d+$/)[0]) + (layer.octave || 0);
+  return name + Math.max(0, Math.min(8, oct));
 }
 
 // ===== SYNTH CREATION =====
@@ -974,10 +999,35 @@ function renderAllLayers() {
     nameEl.style.color = layer.color;
     header.appendChild(nameEl);
 
-    const typeEl = document.createElement('div');
-    typeEl.className = 'layer-type';
-    typeEl.textContent = layer.isPercussive ? 'PERC' : layer.note;
-    header.appendChild(typeEl);
+    // Pitch controls (tonal only) or type badge (perc)
+    if (!layer.isPercussive) {
+      const pitchCtrl = document.createElement('div');
+      pitchCtrl.className = 'pitch-ctrl';
+      const octDown = document.createElement('button');
+      octDown.className = 'oct-btn';
+      octDown.textContent = '\u2212';
+      octDown.addEventListener('click', () => {
+        if (layer.octave > -3) { layer.octave--; noteDisp.textContent = getPlaybackNote(layer); }
+      });
+      const noteDisp = document.createElement('div');
+      noteDisp.className = 'layer-type';
+      noteDisp.textContent = getPlaybackNote(layer);
+      const octUp = document.createElement('button');
+      octUp.className = 'oct-btn';
+      octUp.textContent = '+';
+      octUp.addEventListener('click', () => {
+        if (layer.octave < 3) { layer.octave++; noteDisp.textContent = getPlaybackNote(layer); }
+      });
+      pitchCtrl.appendChild(octDown);
+      pitchCtrl.appendChild(noteDisp);
+      pitchCtrl.appendChild(octUp);
+      header.appendChild(pitchCtrl);
+    } else {
+      const typeEl = document.createElement('div');
+      typeEl.className = 'layer-type';
+      typeEl.textContent = 'PERC';
+      header.appendChild(typeEl);
+    }
 
     const muteBtn = document.createElement('button');
     muteBtn.className = 'layer-btn' + (layer.muted ? ' active' : '');
@@ -1003,8 +1053,8 @@ function renderAllLayers() {
     header.appendChild(soloBtn);
 
     const synthToggle = document.createElement('button');
-    synthToggle.className = 'synth-toggle';
-    synthToggle.textContent = '\u266B';
+    synthToggle.className = 'synth-toggle' + (layer.synthOpen ? ' open' : '');
+    synthToggle.textContent = layer.synthOpen ? '\u2715' : '\u266B';
     synthToggle.title = 'Synth settings';
     header.appendChild(synthToggle);
 
@@ -1025,38 +1075,50 @@ function renderAllLayers() {
 
     // Synth settings panel
     const synthPanel = document.createElement('div');
-    synthPanel.className = 'synth-panel';
+    synthPanel.className = 'synth-panel' + (layer.synthOpen ? ' open' : '');
 
     synthToggle.addEventListener('click', () => {
-      synthPanel.classList.toggle('open');
-      synthToggle.classList.toggle('open');
+      layer.synthOpen = !layer.synthOpen;
+      synthPanel.classList.toggle('open', layer.synthOpen);
+      synthToggle.classList.toggle('open', layer.synthOpen);
+      synthToggle.textContent = layer.synthOpen ? '\u2715' : '\u266B';
     });
 
-    // Oscillator / noise type
-    const oscRow = document.createElement('div');
-    oscRow.className = 'synth-row';
-    const oscLabel = document.createElement('label');
-    oscLabel.textContent = layer.isPercussive ? 'Noise' : 'Osc';
-    const oscSelect = document.createElement('select');
+    // Waveform / noise type chips
+    const oscSectionLabel = document.createElement('div');
+    oscSectionLabel.className = 'synth-section-label';
+    oscSectionLabel.textContent = layer.isPercussive ? 'Noise' : 'Waveform';
+    synthPanel.appendChild(oscSectionLabel);
+
+    const oscChips = document.createElement('div');
+    oscChips.className = 'osc-chips';
     const oscOptions = layer.isPercussive
       ? ['white', 'pink', 'brown']
-      : ['sawtooth', 'square', 'sine', 'triangle'];
-    oscOptions.forEach(opt => {
-      const o = document.createElement('option');
-      o.value = opt;
-      o.textContent = opt;
-      if (opt === layer.oscType) o.selected = true;
-      oscSelect.appendChild(o);
+      : ['sine', 'triangle', 'sawtooth', 'square'];
+    const oscLabels = layer.isPercussive
+      ? ['White', 'Pink', 'Brown']
+      : ['\u223F Sin', '\u25B3 Tri', '\u2191 Saw', '\u25A1 Sqr'];
+    oscOptions.forEach((opt, oi) => {
+      const chip = document.createElement('button');
+      chip.className = 'osc-chip' + (opt === layer.oscType ? ' active' : '');
+      chip.textContent = oscLabels[oi];
+      chip.addEventListener('click', () => {
+        layer.oscType = opt;
+        createSynthForLayer(layer);
+        oscChips.querySelectorAll('.osc-chip').forEach((c, ci) => {
+          c.classList.toggle('active', ci === oi);
+        });
+      });
+      oscChips.appendChild(chip);
     });
-    oscSelect.addEventListener('change', () => {
-      layer.oscType = oscSelect.value;
-      createSynthForLayer(layer);
-    });
-    oscRow.appendChild(oscLabel);
-    oscRow.appendChild(oscSelect);
-    synthPanel.appendChild(oscRow);
+    synthPanel.appendChild(oscChips);
 
-    // ADSR controls
+    // Envelope section
+    const envLabel = document.createElement('div');
+    envLabel.className = 'synth-section-label';
+    envLabel.textContent = 'Envelope';
+    synthPanel.appendChild(envLabel);
+
     const envParams = layer.isPercussive
       ? [['Atk', 'envAttack', 0.001, 0.5, 0.001], ['Dec', 'envDecay', 0.01, 1, 0.01], ['Sus', 'envSustain', 0, 1, 0.01]]
       : [['Atk', 'envAttack', 0.001, 1, 0.001], ['Dec', 'envDecay', 0.01, 2, 0.01], ['Sus', 'envSustain', 0, 1, 0.01], ['Rel', 'envRelease', 0.01, 2, 0.01]];
@@ -1098,6 +1160,12 @@ function renderAllLayers() {
       row.appendChild(val);
       synthPanel.appendChild(row);
     });
+
+    // Filter section
+    const filtLabel = document.createElement('div');
+    filtLabel.className = 'synth-section-label';
+    filtLabel.textContent = 'Filter';
+    synthPanel.appendChild(filtLabel);
 
     // Filter cutoff
     const filtRow = document.createElement('div');
@@ -1258,10 +1326,10 @@ function updateVisuals() {
     metronomeRing.classList.remove('pulse');
   }
 
-  // Beat dots
-  const dots = beatDotsEl.querySelectorAll('.beat-dot');
-  dots.forEach((dot, i) => {
-    dot.classList.toggle('active', i === currentStep);
+  // Beat ring segments
+  const segs = beatRing.querySelectorAll('.seg');
+  segs.forEach((seg, i) => {
+    seg.classList.toggle('active', i === currentStep);
   });
 
   // Step indicator
