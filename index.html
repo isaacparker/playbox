@@ -173,7 +173,15 @@ border-bottom:1px solid var(--accent);gap:6px;
 }
 .layer-strip.collapsed .step-grid,
 .layer-strip.collapsed .layer-controls,
-.layer-strip.collapsed .synth-panel{display:none!important}
+.layer-strip.collapsed .synth-panel,
+.layer-strip.collapsed .note-picker{display:none!important}
+.preset-bar{display:flex;gap:3px;overflow-x:auto;padding:2px 0;-webkit-overflow-scrolling:touch}
+.preset-bar .preset-pill{
+font-size:9px;padding:3px 8px;background:var(--surface3);color:var(--text-dim);
+border:1px solid var(--border);border-radius:10px;cursor:pointer;touch-action:none;
+white-space:nowrap;flex-shrink:0;
+}
+.preset-bar .preset-pill.active{color:var(--accent);border-color:var(--accent);background:rgba(0,255,255,0.08)}
 .layer-name{cursor:pointer}
 .layer-header{display:flex;align-items:center;gap:8px}
 .layer-color{width:10px;height:10px;border-radius:50%;flex-shrink:0}
@@ -1612,6 +1620,39 @@ function renderAllLayers() {
     header.appendChild(delBtn);
 
     strip.appendChild(header);
+
+    // Compact preset bar (always visible)
+    const presetCategory = layer.intentId || (layer.isPercussive ? 'kick' : 'bass');
+    const presets = PRESETS[presetCategory] || [];
+    if (presets.length > 0) {
+      const presetBar = document.createElement('div');
+      presetBar.className = 'preset-bar';
+      presets.forEach(p => {
+        const pill = document.createElement('button');
+        pill.className = 'preset-pill' + (layer.activePreset === p.name ? ' active' : '');
+        pill.textContent = p.name;
+        pill.addEventListener('click', () => {
+          layer.oscType = p.osc;
+          layer.envAttack = p.attack;
+          layer.envDecay = p.decay;
+          layer.envSustain = p.sustain;
+          layer.envRelease = p.release;
+          layer.filterCutoff = p.filter;
+          layer.filterQ = p.q;
+          layer.filtEnvAmount = p.filtEnv;
+          layer.driveAmount = p.drive;
+          layer.activePreset = p.name;
+          createSynthForLayer(layer);
+          if (layer.filter) {
+            layer.filter.frequency.value = layer.filterCutoff;
+            layer.filter.Q.value = layer.filterQ;
+          }
+          renderAllLayers();
+        });
+        presetBar.appendChild(pill);
+      });
+      strip.appendChild(presetBar);
+    }
 
     // Synth settings panel
     const synthPanel = document.createElement('div');
