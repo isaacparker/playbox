@@ -14,7 +14,7 @@
 button,span,div{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
 :root{
 --bg:#000;--surface:#0d0d0d;--surface2:#1c1c1c;--surface3:#2a2a2a;--border:#555;
---text:#eee;--text-dim:#888;--accent:#0ff;--record:#f33;
+--text:#eee;--text-dim:#888;--accent:#fff;--record:#f33;
 --safe-top:env(safe-area-inset-top,0px);
 --safe-bottom:env(safe-area-inset-bottom,0px);
 --safe-left:env(safe-area-inset-left,0px);
@@ -71,7 +71,7 @@ border:1px solid var(--border);border-radius:8px;font-size:13px;font-weight:700;
 cursor:pointer;display:flex;align-items:center;justify-content:center;
 touch-action:none;
 }
-.scene-btn.active{border-color:var(--accent);color:var(--accent);background:#001a1a}
+.scene-btn.active{border-color:var(--accent);color:var(--accent);background:rgba(255,255,255,0.05)}
 #ai-status{
 font-size:10px;color:var(--text-dim);margin-left:auto;white-space:nowrap;
 }
@@ -84,9 +84,9 @@ position:relative;min-height:200px;
 #beat-ring{
 position:absolute;width:300px;height:300px;pointer-events:none;
 }
-#beat-ring .seg-bg{fill:rgba(0,255,255,0.12);stroke:none;transition:fill 0.08s}
-#beat-ring .seg-bg.active{fill:rgba(0,255,255,1)}
-#beat-ring .seg-bg.rec-filled{fill:rgba(255,50,50,0.7)}
+#beat-ring .seg-bg{fill:rgba(255,255,255,0.12);stroke:none;transition:fill 0.08s}
+#beat-ring .seg-bg.active{fill:rgba(255,255,255,1)}
+#beat-ring .seg-bg.rec-filled{fill:rgba(255,255,255,0.5)}
 #beat-ring .divider{stroke:var(--accent);stroke-width:1}
 #beat-ring .ring-edge{fill:none;stroke:var(--accent);stroke-width:1}
 #pulse-wave{
@@ -147,14 +147,14 @@ border:1px solid var(--border);border-radius:10px;cursor:pointer;touch-action:no
 transform:translate(-50%,-50%);white-space:nowrap;
 -webkit-user-select:none;user-select:none;-webkit-touch-callout:none;
 }
-.intent-chip.active{color:var(--accent);border-color:var(--accent);background:rgba(0,255,255,0.08)}
+.intent-chip.active{color:var(--accent);border-color:var(--accent);background:rgba(255,255,255,0.08)}
 #step-indicator{
 position:absolute;bottom:12px;left:50%;transform:translateX(-50%);
 font-size:11px;color:var(--text-dim);font-variant-numeric:tabular-nums;
 }
 /* LAYERS */
 #layers-area{
-flex:0 1 auto;max-height:40vh;overflow-y:auto;overflow-x:hidden;
+flex:0 1 auto;max-height:40vh;overflow-y:auto;overflow-x:hidden;position:relative;
 background:rgba(13,13,13,0.85);-webkit-backdrop-filter:blur(16px);backdrop-filter:blur(16px);
 border-top:1px solid var(--accent);border-left:1px solid var(--accent);border-right:1px solid var(--accent);border-radius:12px 12px 0 0;
 -webkit-overflow-scrolling:touch;z-index:2;
@@ -165,11 +165,12 @@ color:var(--text-dim);font-size:13px;padding:24px;
 }
 #layers-area.minimized .layer-strip{display:none}
 #layers-toggle{
-display:flex;align-items:center;justify-content:center;
-padding:6px;cursor:pointer;touch-action:none;
-font-size:10px;color:var(--text-dim);gap:4px;
+display:none;align-items:center;justify-content:center;
+padding:4px 12px;cursor:pointer;touch-action:none;
+font-size:11px;font-weight:600;color:#000;background:var(--accent);
+border-radius:8px 8px 0 0;position:absolute;top:-24px;left:50%;transform:translateX(-50%);
+z-index:3;min-height:24px;
 }
-#layers-toggle:active{color:var(--accent)}
 .layer-strip{
 display:flex;flex-direction:column;padding:10px 12px;
 border-bottom:1px solid var(--accent);gap:6px;
@@ -178,18 +179,23 @@ border-bottom:1px solid var(--accent);gap:6px;
 .layer-strip.collapsed .layer-controls,
 .layer-strip.collapsed .synth-panel,
 .layer-strip.collapsed .note-picker{display:none!important}
-.preset-bar{display:flex;gap:3px;overflow-x:auto;padding:2px 0;-webkit-overflow-scrolling:touch}
+.preset-bar{display:none;gap:3px;overflow-x:auto;padding:2px 0;-webkit-overflow-scrolling:touch}
+.preset-bar.open{display:flex}
 .preset-bar .preset-pill{
 font-size:9px;padding:3px 8px;background:var(--surface3);color:var(--text-dim);
 border:1px solid var(--border);border-radius:10px;cursor:pointer;touch-action:none;
 white-space:nowrap;flex-shrink:0;
 }
-.preset-bar .preset-pill.active{color:var(--accent);border-color:var(--accent);background:rgba(0,255,255,0.08)}
+.preset-bar .preset-pill.active{color:var(--accent);border-color:var(--accent);background:rgba(255,255,255,0.08)}
 .layer-name{cursor:pointer}
 .layer-header{display:flex;align-items:center;gap:8px}
 .layer-color{width:10px;height:10px;border-radius:50%;flex-shrink:0}
 .layer-name{font-size:12px;font-weight:600;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.layer-type{font-size:10px;color:var(--text-dim);background:var(--surface3);padding:2px 6px;border-radius:4px}
+.layer-type{
+font-size:12px;font-weight:600;color:var(--text);background:var(--surface3);
+padding:0 10px;border-radius:6px;border:1px solid var(--border);
+min-height:36px;display:flex;align-items:center;
+}
 .oct-btn{
 min-width:32px;min-height:32px;background:var(--surface3);color:var(--text-dim);
 border:1px solid var(--border);border-radius:6px;font-size:14px;cursor:pointer;
@@ -206,7 +212,7 @@ display:flex;align-items:center;justify-content:center;touch-action:none;
 .layer-btn.solo-active{color:#fa0;border-color:#fa0}
 .layer-btn.del{color:#f55}
 .step-grid{
-display:grid;grid-template-columns:repeat(16,1fr);gap:3px;
+display:grid;grid-template-columns:repeat(8,1fr);gap:3px;
 }
 .step-cell{
 aspect-ratio:1;min-width:0;min-height:0;border-radius:4px;
@@ -237,8 +243,8 @@ border:1px solid var(--border);border-radius:6px;cursor:pointer;touch-action:non
 width:32px;height:32px;display:flex;align-items:center;justify-content:center;
 flex-shrink:0;padding:0;
 }
-.note-picker .note-btn.active{color:var(--text);border-color:var(--layer-color,#0ff);background:rgba(0,255,255,0.08)}
-.scale-badge{font-size:11px;font-weight:600;color:var(--accent);padding:4px 8px;background:rgba(0,255,255,0.1);border:1px solid rgba(0,255,255,0.25);border-radius:6px;white-space:nowrap}
+.note-picker .note-btn.active{color:var(--text);border-color:var(--layer-color,#0ff);background:rgba(255,255,255,0.08)}
+.scale-badge{font-size:11px;font-weight:600;color:var(--text);padding:4px 8px;background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.2);border-radius:6px;white-space:nowrap}
 .layer-controls{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 .layer-slider-group{display:flex;align-items:center;gap:4px;flex:1;min-width:100px}
 .layer-slider-group label{font-size:10px;color:var(--text-dim);min-width:24px}
@@ -264,7 +270,7 @@ font-size:11px;padding:4px 10px;background:var(--surface3);color:var(--text-dim)
 border:1px solid var(--border);border-radius:12px;cursor:pointer;touch-action:none;
 min-height:32px;display:flex;align-items:center;
 }
-.osc-chip.active{color:var(--text);border-color:var(--layer-color,#0ff);background:rgba(0,255,255,0.08)}
+.osc-chip.active{color:var(--text);border-color:var(--layer-color,#0ff);background:rgba(255,255,255,0.08)}
 .osc-chips.note-chips{gap:3px}
 .osc-chips.note-chips .osc-chip{padding:0;width:32px;height:32px;font-size:10px;border-radius:6px;justify-content:center;flex-shrink:0}
 .synth-row{display:flex;align-items:center;gap:8px}
@@ -289,8 +295,8 @@ min-height:32px;display:flex;align-items:center;
 <button class="transport-btn" id="stop-btn">&#9632;</button>
 <input type="range" id="bpm-slider" min="60" max="200" value="90">
 <span id="bpm-display">90</span>
-<div class="scene-sel" id="scene-sel"></div>
-<button class="transport-btn" id="dup-scene-btn" title="Duplicate Scene">+S</button>
+<div class="scene-sel" id="scene-sel" style="display:none"></div>
+<button class="transport-btn" id="dup-scene-btn" title="Duplicate Scene" style="display:none">+S</button>
 <span id="scale-badge" class="scale-badge" style="display:none;margin-left:auto"></span>
 </div>
 <div id="center">
@@ -1599,35 +1605,27 @@ function renderAllLayers() {
     const header = document.createElement('div');
     header.className = 'layer-header';
 
-    const colorDot = document.createElement('div');
-    colorDot.className = 'layer-color';
-    colorDot.style.background = layer.color;
-    header.appendChild(colorDot);
+    // Type chip — shows intent name, tappable to show presets
+    const typeEl = document.createElement('div');
+    typeEl.className = 'layer-type';
+    typeEl.style.borderColor = layer.color;
+    typeEl.style.color = layer.color;
+    const typeName = layer.name || (layer.isPercussive ? 'Perc' : 'Synth');
+    typeEl.textContent = typeName;
+    header.appendChild(typeEl);
 
-    const nameEl = document.createElement('div');
-    nameEl.className = 'layer-name';
-    nameEl.textContent = layer.name + (isExpanded ? ' \u25B4' : ' \u25BE');
-    nameEl.style.color = layer.color;
-    nameEl.addEventListener('click', () => {
+    // Expand/collapse toggle
+    let headerNoteDisp = null;
+    const expandBtn = document.createElement('div');
+    expandBtn.className = 'layer-name';
+    expandBtn.style.color = layer.color;
+    expandBtn.textContent = isExpanded ? '\u25B4' : '\u25BE';
+    expandBtn.addEventListener('click', () => {
       if (expandedLayers.has(layer.id)) expandedLayers.delete(layer.id);
       else expandedLayers.add(layer.id);
       renderAllLayers();
     });
-    header.appendChild(nameEl);
-
-    // Pitch display (tonal) or type badge (perc)
-    let headerNoteDisp = null;
-    if (!layer.isPercussive) {
-      headerNoteDisp = document.createElement('div');
-      headerNoteDisp.className = 'layer-type';
-      headerNoteDisp.textContent = getPlaybackNote(layer);
-      header.appendChild(headerNoteDisp);
-    } else {
-      const typeEl = document.createElement('div');
-      typeEl.className = 'layer-type';
-      typeEl.textContent = 'PERC';
-      header.appendChild(typeEl);
-    }
+    header.appendChild(expandBtn);
 
     const muteBtn = document.createElement('button');
     muteBtn.className = 'layer-btn' + (layer.muted ? ' active' : '');
@@ -1676,12 +1674,17 @@ function renderAllLayers() {
 
     strip.appendChild(header);
 
-    // Compact preset bar (always visible)
+    // Preset bar (hidden, toggled by type chip)
     const presetCategory = layer.intentId || (layer.isPercussive ? 'kick' : 'bass');
     const presets = PRESETS[presetCategory] || [];
     if (presets.length > 0) {
       const presetBar = document.createElement('div');
-      presetBar.className = 'preset-bar';
+      presetBar.className = 'preset-bar' + (layer.presetsOpen ? ' open' : '');
+      typeEl.style.cursor = 'pointer';
+      typeEl.addEventListener('click', () => {
+        layer.presetsOpen = !layer.presetsOpen;
+        presetBar.classList.toggle('open', layer.presetsOpen);
+      });
       presets.forEach(p => {
         const pill = document.createElement('button');
         pill.className = 'preset-pill' + (layer.activePreset === p.name ? ' active' : '');
@@ -2196,9 +2199,13 @@ function updateVisuals() {
     }
   }
 
+  // Show rec-filled during recording, or last layer's steps after
+  const lastLayer = currentScene().layers.length > 0 ? currentScene().layers[currentScene().layers.length - 1] : null;
   segs.forEach((seg, i) => {
-    seg.classList.toggle('active', i === currentStep && appState !== 'RECORDING');
-    seg.classList.toggle('rec-filled', recFilledSteps[i]);
+    const isActive = i === currentStep;
+    const isFilled = appState === 'RECORDING' ? recFilledSteps[i] : (lastLayer && lastLayer.steps[i]);
+    seg.classList.toggle('active', isActive);
+    seg.classList.toggle('rec-filled', !isActive && isFilled && appState !== 'INIT');
   });
 
   // Step indicator
