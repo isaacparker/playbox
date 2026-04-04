@@ -494,8 +494,6 @@ const INACTIVE_BAND = 10; // neighbor ring thickness
 const RING_GAP = 2;
 const RING_CENTER_R = 130; // center radius of the active ring
 let activeLayerIdx = 0;
-let animActiveIdx = 0; // animated version for smooth transitions
-let animating = false;
 const layerNav = document.getElementById('layer-nav');
 
 function arcPath(cx, cy, rOuter, rInner, startAngle, endAngle) {
@@ -561,99 +559,93 @@ function drawRing(ns, rOuter, rInner, layer, color, opacity, isActive) {
   ringsSvg.appendChild(g);
 }
 
-function getRingLayout(layers, focusIdx) {
-  var result = new Array(layers.length).fill(null);
-  if (layers.length === 0) return result;
-  var activeI = Math.round(focusIdx);
-  activeI = Math.max(0, Math.min(layers.length - 1, activeI));
-
-  // Active ring anchored at RING_CENTER_R
-  var aInner = RING_CENTER_R - ACTIVE_BAND / 2;
-  var aOuter = RING_CENTER_R + ACTIVE_BAND / 2;
-  result[activeI] = { rOuter: aOuter, rInner: aInner, opacity: 1, isActive: true };
-
-  // Stack inward from active (layers before it)
-  var r = aInner;
-  for (var i = activeI - 1; i >= 0; i--) {
-    r = r - RING_GAP - INACTIVE_BAND;
-    if (r < 5) break;
-    result[i] = { rOuter: r + INACTIVE_BAND, rInner: r, opacity: 1, isActive: false };
-  }
-
-  // Stack outward from active (layers after it)
-  r = aOuter;
-  for (var i = activeI + 1; i < layers.length; i++) {
-    r = r + RING_GAP;
-    if (r + INACTIVE_BAND > 168) break;
-    result[i] = { rOuter: r + INACTIVE_BAND, rInner: r, opacity: 1, isActive: false };
-    r = r + INACTIVE_BAND;
-  }
-
-  return result;
+// Map intent IDs to slots (fixed order)
+function getIntentSlotIdx(intentId) {
+  return INTENTS.findIndex(function(ii) { return ii.id === intentId; });
+}
+function getActiveSlotIdx() {
+  return getIntentSlotIdx(selectedIntent);
 }
 
 function renderRings() {
   while (ringsSvg.firstChild) ringsSvg.removeChild(ringsSvg.firstChild);
   var ns = 'http://www.w3.org/2000/svg';
   var layers = currentScene().layers;
+  var activeSlot = getActiveSlotIdx();
+  if (activeSlot < 0) activeSlot = 0;
 
-  if (layers.length === 0) {
-    // Empty state
-    var aOuter = RING_CENTER_R + ACTIVE_BAND / 2;
-    var aInner = RING_CENTER_R - ACTIVE_BAND / 2;
-    drawRing(ns, aOuter, aInner, null, 'var(--accent)', 1, true);
-    return;
+  // Build a map: intent slot index -> layer (or null if not recorded)
+  var slotLayers = new Array(INTENTS.length).fill(null);
+  layers.forEach(function(l) {
+    var slot = getIntentSlotIdx(l.intentId);
+    if (slot >= 0) slotLayers[slot] = l;
+  });
+
+  // Calculate ring positions: activeSlot = thick center, others stack in/out
+  var rings = []; // {rOuter, rInner, layer, intent, isActive}
+
+  // Active ring at center
+  var aInner = RING_CENTER_R - ACTIVE_BAND / 2;
+  var aOuter = RING_CENTER_R + ACTIVE_BAND / 2;
+  rings.push({
+    rOuter: aOuter, rInner: aInner,
+    layer: slotLayers[activeSlot], intent: INTENTS[activeSlot],
+    isActive: true, slot: activeSlot
+  });
+
+  // Stack inward: slots before activeSlot (only those with recorded layers)
+  var r = aInner;
+  for (var s = activeSlot - 1; s >= 0; s--) {
+    if (!slotLayers[s]) continue;
+    r = r - RING_GAP - INACTIVE_BAND;
+    if (r < 5) break;
+    rings.push({
+      rOuter: r + INACTIVE_BAND, rInner: r,
+      layer: slotLayers[s], intent: INTENTS[s],
+      isActive: false, slot: s
+    });
   }
 
-  var layout = getRingLayout(layers, animActiveIdx);
-
-  // Draw from outermost to innermost so inner rings paint on top
-  for (var i = layers.length - 1; i >= 0; i--) {
-    if (!layout[i]) continue;
-    var l = layout[i];
-    drawRing(ns, l.rOuter, l.rInner, layers[i], layers[i].color, l.opacity, l.isActive);
+  // Stack outward: slots after activeSlot (only those with recorded layers)
+  r = aOuter;
+  for (var s = activeSlot + 1; s < INTENTS.length; s++) {
+    if (!slotLayers[s]) continue;
+    r = r + RING_GAP;
+    if (r + INACTIVE_BAND > 168) break;
+    rings.push({
+      rOuter: r + INACTIVE_BAND, rInner: r,
+      layer: slotLayers[s], intent: INTENTS[s],
+      isActive: false, slot: s
+    });
+    r = r + INACTIVE_BAND;
   }
+
+  // Draw from outermost to innermost
+  rings.sort(function(a, b) { return b.rOuter - a.rOuter; });
+  rings.forEach(function(ring) {
+    var color = ring.intent.color;
+    drawRing(ns, ring.rOuter, ring.rInner, ring.layer, color, 1, ring.isActive);
+  });
 }
 
-function switchToLayer(newIdx) {
-  if (newIdx === activeLayerIdx) return;
-  activeLayerIdx = newIdx;
-  // Animate toward new position
-  if (!animating) {
-    animating = true;
-    animateRings();
-  }
-  // Update accent color
-  var layer = currentScene().layers[newIdx];
-  if (layer) {
-    var intentObj = INTENTS.find(function(i) { return i.color === layer.color; });
-    if (intentObj) {
-      setGlobalAccent(intentObj.color, intentObj.rgb);
-      selectedIntent = intentObj.id;
-      flowSub.textContent = intentObj.label;
-    }
-  }
+function switchToIntent(intentId) {
+  var intent = INTENTS.find(function(i) { return i.id === intentId; });
+  if (!intent) return;
+  selectedIntent = intentId;
+  setGlobalAccent(intent.color, intent.rgb);
+  flowSub.textContent = intent.label;
+  // Update activeLayerIdx to match if this intent has a recorded layer
+  var layers = currentScene().layers;
+  var layerIdx = layers.findIndex(function(l) { return l.intentId === intentId; });
+  if (layerIdx >= 0) activeLayerIdx = layerIdx;
+  renderRings();
   renderLayerNav();
   renderEditPanel();
 }
 
-function animateRings() {
-  var diff = activeLayerIdx - animActiveIdx;
-  if (Math.abs(diff) < 0.02) {
-    animActiveIdx = activeLayerIdx;
-    animating = false;
-    renderRings();
-    return;
-  }
-  // Smooth lerp
-  animActiveIdx += diff * 0.18;
-  renderRings();
-  requestAnimationFrame(animateRings);
-}
-
 function handleRingStepTap(e) {
   var step = parseInt(e.target.dataset.step);
-  var layer = currentScene().layers[activeLayerIdx];
+  var layer = currentScene().layers.find(function(l) { return l.intentId === selectedIntent; });
   if (!layer) return;
   layer.steps[step] = !layer.steps[step];
   if (layer.steps[step] && layer.notes && !layer.notes[step]) {
@@ -687,18 +679,7 @@ function renderLayerNav() {
       chip.textContent = intent.label;
     }
     chip.addEventListener('click', function() {
-      if (existingIdx >= 0) {
-        // Switch to existing layer with animation
-        switchToLayer(existingIdx);
-      } else {
-        // Select intent for next recording
-        selectedIntent = intent.id;
-        setGlobalAccent(intent.color, intent.rgb);
-        flowSub.textContent = intent.label;
-      }
-      renderLayerNav();
-      renderRings();
-      renderEditPanel();
+      switchToIntent(intent.id);
     });
     layerNav.appendChild(chip);
   });
@@ -775,6 +756,7 @@ async function initAudio() {
       await Tone.context.resume();
     }
     await Tone.start();
+    Tone.Destination.volume.value = -12; // prevent blasting at full volume
     audioContext = Tone.context.rawContext;
     Tone.Transport.bpm.value = currentBPM;
     Tone.Transport.loop = true;
@@ -1129,7 +1111,6 @@ async function processRecording() {
   // Set new layer as active in ring view
   var newIdx = currentScene().layers.length - 1;
   activeLayerIdx = newIdx;
-  animActiveIdx = newIdx; // snap, don't animate from 0
 
   // Update global scale from all layers
   updateGlobalScale();
@@ -1145,26 +1126,19 @@ async function processRecording() {
   // 5. AI suggestion
   requestAISuggestion(layer);
 
-  renderRings(); renderEditPanel(); renderLayerNav();
   if (!isPlaying) startTransport();
   setState('PLAYING');
 
-  // Auto-advance to next unrecorded intent
-  if (selectedIntent) {
-    const layers = currentScene().layers;
-    const usedIntents = new Set(layers.map(l => l.intentId).filter(Boolean));
-    const nextIntent = INTENTS.find(ii => !usedIntents.has(ii.id));
-    if (nextIntent) {
-      selectedIntent = nextIntent.id;
-      setGlobalAccent(nextIntent.color, nextIntent.rgb);
-      flowSub.textContent = nextIntent.label;
-    } else {
-      // All intents recorded — stay on current
-      if (intentObj) setGlobalAccent(intentObj.color, intentObj.rgb);
-      flowSub.textContent = 'All recorded';
-    }
+  // Auto-advance to next unrecorded intent (switches UI color + ring)
+  var allLayers = currentScene().layers;
+  var usedIntents = new Set(allLayers.map(function(l) { return l.intentId; }).filter(Boolean));
+  var nextIntent = INTENTS.find(function(ii) { return !usedIntents.has(ii.id); });
+  if (nextIntent) {
+    switchToIntent(nextIntent.id);
+  } else {
+    // All recorded — stay on current
+    if (intentObj) switchToIntent(intentObj.id);
   }
-  renderLayerNav();
 }
 
 // ===== FIND LOUDEST REGION =====
@@ -1774,10 +1748,10 @@ const expandedLayers = new Set(); // kept for compatibility
 function renderEditPanel() {
   while (editPanel.firstChild) editPanel.removeChild(editPanel.firstChild);
   const scene = currentScene();
-  if (scene.layers.length === 0) return;
-  activeLayerIdx = Math.min(activeLayerIdx, scene.layers.length - 1);
-  const layer = scene.layers[activeLayerIdx];
-  if (!layer) return;
+  // Find layer matching selected intent
+  const layer = scene.layers.find(function(l) { return l.intentId === selectedIntent; });
+  if (!layer) return; // No recorded layer for this intent — empty panel
+  activeLayerIdx = scene.layers.indexOf(layer);
 
   editPanel.style.setProperty('--layer-color', layer.color);
 
