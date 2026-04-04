@@ -1143,19 +1143,24 @@ async function processRecording() {
   // 5. AI suggestion
   requestAISuggestion(layer);
 
-  // Set global accent to the newly recorded layer's color
-  if (intentObj) setGlobalAccent(intentObj.color, intentObj.rgb);
-
   renderRings(); renderEditPanel(); renderLayerNav();
   if (!isPlaying) startTransport();
   setState('PLAYING');
 
-  // Auto-advance selectedIntent for next recording (but don't change active layer or accent)
+  // Auto-advance to next unrecorded intent
   if (selectedIntent) {
-    const currentIdx = INTENTS.findIndex(i => i.id === selectedIntent);
-    const nextIdx = (currentIdx + 1) % INTENTS.length;
-    selectedIntent = INTENTS[nextIdx].id;
-    flowSub.textContent = INTENTS[nextIdx].label;
+    const layers = currentScene().layers;
+    const usedIntents = new Set(layers.map(l => l.intentId).filter(Boolean));
+    const nextIntent = INTENTS.find(ii => !usedIntents.has(ii.id));
+    if (nextIntent) {
+      selectedIntent = nextIntent.id;
+      setGlobalAccent(nextIntent.color, nextIntent.rgb);
+      flowSub.textContent = nextIntent.label;
+    } else {
+      // All intents recorded — stay on current
+      if (intentObj) setGlobalAccent(intentObj.color, intentObj.rgb);
+      flowSub.textContent = 'All recorded';
+    }
   }
   renderLayerNav();
 }
