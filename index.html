@@ -1144,7 +1144,6 @@ async function processRecording() {
   requestAISuggestion(layer);
 
   // Set global accent to the newly recorded layer's color
-  var intentObj = INTENTS.find(function(ii) { return ii.color === layer.color; });
   if (intentObj) setGlobalAccent(intentObj.color, intentObj.rgb);
 
   renderRings(); renderEditPanel(); renderLayerNav();
