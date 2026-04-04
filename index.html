@@ -585,21 +585,23 @@ function renderRings() {
   var positions = new Array(INTENTS.length);
   positions[activeSlot] = { rInner: aInner, rOuter: aOuter, isActive: true };
 
-  // Stack inward from active
-  var r = aInner;
+  // Only show immediate neighbor inside and outside (max 1 each)
+  // Find nearest recorded layer before active
   for (var s = activeSlot - 1; s >= 0; s--) {
-    r = r - RING_GAP - INACTIVE_BAND;
-    if (r < 5) { positions[s] = null; continue; }
-    positions[s] = { rInner: r, rOuter: r + INACTIVE_BAND, isActive: false };
+    if (slotLayers[s]) {
+      var r = aInner - RING_GAP - INACTIVE_BAND;
+      if (r >= 5) positions[s] = { rInner: r, rOuter: r + INACTIVE_BAND, isActive: false };
+      break;
+    }
   }
 
-  // Stack outward from active
-  r = aOuter;
+  // Find nearest recorded layer after active
   for (var s = activeSlot + 1; s < INTENTS.length; s++) {
-    r = r + RING_GAP;
-    if (r + INACTIVE_BAND > 169) { positions[s] = null; continue; }
-    positions[s] = { rInner: r, rOuter: r + INACTIVE_BAND, isActive: false };
-    r = r + INACTIVE_BAND;
+    if (slotLayers[s]) {
+      var r = aOuter + RING_GAP;
+      if (r + INACTIVE_BAND <= 169) positions[s] = { rInner: r, rOuter: r + INACTIVE_BAND, isActive: false };
+      break;
+    }
   }
 
   // Draw from outermost to innermost
