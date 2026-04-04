@@ -48,7 +48,7 @@ display:flex;align-items:center;justify-content:center;z-index:1000;
 flex-direction:column;gap:16px;
 }
 #overlay .start-btn{
-font-size:24px;color:var(--accent);background:none;border:2px solid var(--accent);
+font-size:24px;color:var(--text);background:none;border:2px solid rgba(255,255,255,0.3);
 border-radius:50%;width:300px;height:300px;cursor:pointer;
 display:flex;align-items:center;justify-content:center;
 transition:transform 0.2s;
@@ -90,16 +90,16 @@ font-size:10px;color:var(--text-dim);margin-left:auto;white-space:nowrap;
 /* CENTER */
 #center{
 flex:1;display:flex;align-items:center;justify-content:center;
-position:relative;min-height:200px;
+position:relative;min-height:200px;touch-action:none;
 }
-#beat-ring{
-position:absolute;width:300px;height:300px;pointer-events:none;
+#rings-svg{
+position:absolute;width:340px;height:340px;
 }
-#beat-ring .seg-bg{fill:var(--accent-fill-idle);stroke:none;transition:fill 0.08s}
-#beat-ring .seg-bg.active{fill:var(--accent-fill-active)}
-#beat-ring .seg-bg.rec-filled{fill:var(--accent-fill-medium)}
-#beat-ring .divider{stroke:var(--accent);stroke-width:1}
-#beat-ring .ring-edge{fill:none;stroke:var(--accent);stroke-width:1}
+#rings-svg .seg{stroke:none;cursor:pointer;transition:fill 0.08s}
+#rings-svg .seg.on{fill-opacity:1}
+#rings-svg .seg.current-step{stroke:var(--text);stroke-width:2}
+#rings-svg .ring-border{fill:none;stroke-width:0.5}
+#rings-svg .divider-line{stroke-width:0.5}
 #pulse-wave{
 position:absolute;width:300px;height:300px;border-radius:50%;
 border:2px solid var(--accent);opacity:0;pointer-events:none;
@@ -163,38 +163,19 @@ transform:translate(-50%,-50%);white-space:nowrap;
 position:absolute;bottom:12px;left:50%;transform:translateX(-50%);
 font-size:11px;color:var(--text-dim);font-variant-numeric:tabular-nums;
 }
-/* LAYERS */
-#layers-area{
-flex:0 1 auto;max-height:40vh;overflow-y:auto;overflow-x:hidden;position:relative;
+/* EDIT PANEL */
+#edit-panel{
+flex:0 1 auto;max-height:45vh;overflow-y:auto;overflow-x:hidden;
 background:rgba(13,13,13,0.85);-webkit-backdrop-filter:blur(16px);backdrop-filter:blur(16px);
 border-top:1px solid var(--accent);border-left:1px solid var(--accent);border-right:1px solid var(--accent);border-radius:12px 12px 0 0;
--webkit-overflow-scrolling:touch;z-index:2;
+-webkit-overflow-scrolling:touch;z-index:2;padding:10px 12px;
+display:flex;flex-direction:column;gap:8px;
 }
-#layers-area:empty::after{
+#edit-panel:empty::after{
 content:'Record to add layers';display:block;text-align:center;
 color:var(--text-dim);font-size:13px;padding:24px;
 }
-#layers-area.minimized .layer-strip{display:none}
-#layers-toggle{
-display:none;align-items:center;justify-content:center;
-padding:4px 12px;cursor:pointer;touch-action:none;
-font-size:11px;font-weight:600;color:#000;background:var(--accent);
-border-radius:8px 8px 0 0;position:absolute;top:-24px;left:50%;transform:translateX(-50%);
-z-index:3;min-height:24px;
-}
-.layer-strip{
-display:flex;flex-direction:column;padding:10px 12px;
-border-bottom:1px solid var(--border);gap:6px;
-}
-.layer-strip.active-strip{border-bottom-color:var(--accent)}
-.layer-strip.collapsed .step-grid,
-.layer-strip.collapsed .layer-controls,
-.layer-strip.collapsed .synth-panel,
-.layer-strip.collapsed .note-picker,
-.layer-strip.collapsed .preset-bar{display:none!important}
-.layer-strip.collapsed .layer-type{color:var(--text-dim)!important;border-color:var(--border)!important}
-.layer-strip.collapsed .layer-btn{color:var(--text-dim)}
-.layer-strip.collapsed .synth-toggle{display:none}
+#edit-panel .panel-header{display:flex;align-items:center;gap:8px}
 .preset-bar{display:none;gap:3px;overflow-x:auto;padding:2px 0;-webkit-overflow-scrolling:touch}
 .preset-bar.open{display:flex}
 .preset-bar .preset-pill{
@@ -318,7 +299,7 @@ min-height:32px;display:flex;align-items:center;
 <div id="center">
 <div id="pulse-wave"></div>
 <div id="pulse-tick"></div>
-<svg id="beat-ring" viewBox="0 0 300 300"></svg>
+<svg id="rings-svg" viewBox="0 0 340 340"></svg>
 <div id="intent-ring"></div>
 <button id="flow-btn">
 <span id="flow-label">Hold to Record</span>
@@ -330,9 +311,7 @@ min-height:32px;display:flex;align-items:center;
 </div>
 <div id="step-indicator">Step: 1 / 16</div>
 </div>
-<div id="layers-area">
-<div id="layers-toggle"></div>
-</div>
+<div id="edit-panel"></div>
 </div>
 <script>
 (function(){
@@ -385,14 +364,14 @@ const dupSceneBtn = document.getElementById('dup-scene-btn');
 const roomBtn = document.getElementById('room-btn');
 const scaleBadge = document.getElementById('scale-badge');
 const roomMixSlider = document.getElementById('room-mix-slider');
-const beatRing = document.getElementById('beat-ring');
+const ringsSvg = document.getElementById('rings-svg');
 const pulseWave = document.getElementById('pulse-wave');
 const pulseTick = document.getElementById('pulse-tick');
+const editPanel = document.getElementById('edit-panel');
 const flowBtn = document.getElementById('flow-btn');
 const flowLabel = document.getElementById('flow-label');
 const flowSub = document.getElementById('flow-sub');
 const stepIndicator = document.getElementById('step-indicator');
-const layersArea = document.getElementById('layers-area');
 const intentRing = document.getElementById('intent-ring');
 
 // ===== SOUND INTENT =====
@@ -507,7 +486,15 @@ function getSelectedIntent() {
   return INTENTS.find(i => i.id === selectedIntent);
 }
 
-// ===== BEAT RING (16 thick arc segments) =====
+// ===== CONCENTRIC RING SYSTEM =====
+const RING_CX = 170, RING_CY = 170;
+const RING_ACTIVE_OUTER = 158, RING_ACTIVE_INNER = 108;
+const RING_BAND = RING_ACTIVE_OUTER - RING_ACTIVE_INNER; // 50
+const RING_GAP = 3;
+let activeLayerIdx = 0;
+let ringDragStart = null;
+let ringOffset = 0; // smooth scroll offset
+
 function arcPath(cx, cy, rOuter, rInner, startAngle, endAngle) {
   const x1o = cx + Math.cos(startAngle) * rOuter;
   const y1o = cy + Math.sin(startAngle) * rOuter;
@@ -523,51 +510,155 @@ function arcPath(cx, cy, rOuter, rInner, startAngle, endAngle) {
     ' A ' + rInner + ' ' + rInner + ' 0 0 0 ' + x2i + ' ' + y2i + ' Z';
 }
 
-function createBeatSegments() {
-  while (beatRing.firstChild) beatRing.removeChild(beatRing.firstChild);
+function renderRings() {
+  while (ringsSvg.firstChild) ringsSvg.removeChild(ringsSvg.firstChild);
   var ns = 'http://www.w3.org/2000/svg';
-  var cx = 150, cy = 150, rOuter = 148, rInner = 100;
+  var layers = currentScene().layers;
+  if (layers.length === 0) {
+    // Empty state — draw one default ring
+    drawRing(ns, RING_ACTIVE_OUTER, RING_ACTIVE_INNER, null, 'var(--accent)', 1, true);
+    return;
+  }
 
-  // Filled segments (bottom layer)
+  // Calculate ring positions — active is at the main band, others scale down concentrically
+  for (var li = 0; li < layers.length; li++) {
+    var offset = li - activeLayerIdx;
+    var scale = 1 - Math.abs(offset) * 0.35;
+    if (scale <= 0.1) continue; // too far away, don't render
+    scale = Math.max(0.15, scale);
+
+    var bandWidth = RING_BAND * scale;
+    var centerR;
+    if (offset === 0) {
+      centerR = (RING_ACTIVE_OUTER + RING_ACTIVE_INNER) / 2;
+    } else if (offset > 0) {
+      // Outside the active ring
+      centerR = RING_ACTIVE_OUTER + RING_GAP + (offset - 0.5) * (bandWidth + RING_GAP);
+    } else {
+      // Inside the active ring
+      centerR = RING_ACTIVE_INNER - RING_GAP - (Math.abs(offset) - 0.5) * (bandWidth + RING_GAP);
+    }
+    if (centerR < 10) continue;
+
+    var rOuter = centerR + bandWidth / 2;
+    var rInner = Math.max(5, centerR - bandWidth / 2);
+    var layer = layers[li];
+    var isActive = li === activeLayerIdx;
+    var opacity = isActive ? 1 : 0.3 + scale * 0.3;
+
+    drawRing(ns, rOuter, rInner, layer, layer.color, opacity, isActive);
+  }
+}
+
+function drawRing(ns, rOuter, rInner, layer, color, opacity, isActive) {
+  var group = document.createElementNS(ns, 'g');
+  group.setAttribute('opacity', opacity);
+
+  var fillIdle = 'rgba(' + hexToRgb(color) + ',0.12)';
+  var fillOn = color;
+
+  // Segments
   for (var i = 0; i < 16; i++) {
     var startAngle = (i / 16) * Math.PI * 2 - Math.PI / 2;
     var endAngle = ((i + 1) / 16) * Math.PI * 2 - Math.PI / 2;
     var path = document.createElementNS(ns, 'path');
-    path.setAttribute('d', arcPath(cx, cy, rOuter, rInner, startAngle, endAngle));
-    path.setAttribute('class', 'seg-bg');
-    path.dataset.step = i;
-    beatRing.appendChild(path);
+    path.setAttribute('d', arcPath(RING_CX, RING_CY, rOuter, rInner, startAngle, endAngle));
+    var stepOn = layer && layer.steps[i];
+    var isRecFilled = !layer && recFilledSteps[i];
+    path.setAttribute('fill', (stepOn || isRecFilled) ? fillOn : fillIdle);
+    path.setAttribute('class', 'seg' + (stepOn ? ' on' : '') + (i === currentStep ? ' current-step' : ''));
+    if (isActive && layer) {
+      path.dataset.step = i;
+      path.dataset.layerIdx = activeLayerIdx;
+      path.addEventListener('pointerdown', handleRingStepTap);
+    }
+    group.appendChild(path);
   }
 
-  // Inner edge circle (on top)
-  var innerEdge = document.createElementNS(ns, 'circle');
-  innerEdge.setAttribute('cx', cx);
-  innerEdge.setAttribute('cy', cy);
-  innerEdge.setAttribute('r', rInner);
-  innerEdge.setAttribute('class', 'ring-edge');
-  beatRing.appendChild(innerEdge);
+  // Inner/outer borders
+  var inner = document.createElementNS(ns, 'circle');
+  inner.setAttribute('cx', RING_CX);
+  inner.setAttribute('cy', RING_CY);
+  inner.setAttribute('r', rInner);
+  inner.setAttribute('class', 'ring-border');
+  inner.setAttribute('stroke', color);
+  group.appendChild(inner);
 
-  // Outer edge circle (on top)
-  var outerEdge = document.createElementNS(ns, 'circle');
-  outerEdge.setAttribute('cx', cx);
-  outerEdge.setAttribute('cy', cy);
-  outerEdge.setAttribute('r', rOuter);
-  outerEdge.setAttribute('class', 'ring-edge');
-  beatRing.appendChild(outerEdge);
+  var outer = document.createElementNS(ns, 'circle');
+  outer.setAttribute('cx', RING_CX);
+  outer.setAttribute('cy', RING_CY);
+  outer.setAttribute('r', rOuter);
+  outer.setAttribute('class', 'ring-border');
+  outer.setAttribute('stroke', color);
+  group.appendChild(outer);
 
-  // Divider lines between segments (on top)
+  // Dividers
   for (var i = 0; i < 16; i++) {
     var angle = (i / 16) * Math.PI * 2 - Math.PI / 2;
     var line = document.createElementNS(ns, 'line');
-    line.setAttribute('x1', cx + Math.cos(angle) * rInner);
-    line.setAttribute('y1', cy + Math.sin(angle) * rInner);
-    line.setAttribute('x2', cx + Math.cos(angle) * rOuter);
-    line.setAttribute('y2', cy + Math.sin(angle) * rOuter);
-    line.setAttribute('class', 'divider');
-    beatRing.appendChild(line);
+    line.setAttribute('x1', RING_CX + Math.cos(angle) * rInner);
+    line.setAttribute('y1', RING_CY + Math.sin(angle) * rInner);
+    line.setAttribute('x2', RING_CX + Math.cos(angle) * rOuter);
+    line.setAttribute('y2', RING_CY + Math.sin(angle) * rOuter);
+    line.setAttribute('class', 'divider-line');
+    line.setAttribute('stroke', color);
+    group.appendChild(line);
   }
+
+  ringsSvg.appendChild(group);
 }
-createBeatSegments();
+
+function hexToRgb(hex) {
+  hex = hex.replace('#', '');
+  if (hex.length === 3) hex = hex[0]+hex[0]+hex[1]+hex[1]+hex[2]+hex[2];
+  return parseInt(hex.substring(0,2),16) + ',' + parseInt(hex.substring(2,4),16) + ',' + parseInt(hex.substring(4,6),16);
+}
+
+function handleRingStepTap(e) {
+  var step = parseInt(e.target.dataset.step);
+  var layer = currentScene().layers[activeLayerIdx];
+  if (!layer) return;
+  layer.steps[step] = !layer.steps[step];
+  if (layer.steps[step] && !layer.notes[step]) {
+    layer.notes[step] = layer.note || 'C4';
+  }
+  renderRings();
+  renderEditPanel();
+}
+
+// Radial drag to scroll layers
+document.getElementById('center').addEventListener('pointerdown', function(e) {
+  if (e.target.closest('#flow-btn') || e.target.closest('#intent-ring') || e.target.closest('#room-wrap')) return;
+  var rect = ringsSvg.getBoundingClientRect();
+  var cx = rect.left + rect.width / 2;
+  var cy = rect.top + rect.height / 2;
+  var dist = Math.sqrt(Math.pow(e.clientX - cx, 2) + Math.pow(e.clientY - cy, 2));
+  ringDragStart = { y: e.clientY, dist: dist, idx: activeLayerIdx };
+});
+
+document.addEventListener('pointermove', function(e) {
+  if (!ringDragStart) return;
+  var delta = ringDragStart.y - e.clientY;
+  var steps = Math.round(delta / 40); // 40px per layer
+  var newIdx = ringDragStart.idx + steps;
+  var layers = currentScene().layers;
+  if (layers.length > 0) {
+    newIdx = Math.max(0, Math.min(layers.length - 1, newIdx));
+    if (newIdx !== activeLayerIdx) {
+      activeLayerIdx = newIdx;
+      var layer = layers[activeLayerIdx];
+      var intentObj = INTENTS.find(function(i) { return i.color === layer.color; });
+      if (intentObj) setGlobalAccent(intentObj.color, intentObj.rgb);
+      renderRings();
+      renderEditPanel();
+    }
+  }
+});
+
+document.addEventListener('pointerup', function() { ringDragStart = null; });
+document.addEventListener('pointercancel', function() { ringDragStart = null; });
+
+renderRings();
 
 // ===== SCENE UI =====
 function renderScenes() {
@@ -586,7 +677,7 @@ function switchScene(idx) {
   if (idx === currentSceneIdx) return;
   currentSceneIdx = idx;
   renderScenes();
-  renderAllLayers();
+  renderRings(); renderEditPanel();
 }
 
 function duplicateScene() {
@@ -829,7 +920,7 @@ let recLastStep = -1;
 function clearRecRing() {
   recFilledSteps = new Array(16).fill(false);
   recLastStep = -1;
-  beatRing.querySelectorAll('.seg-bg').forEach(seg => seg.classList.remove('rec-filled'));
+  renderRings();
 }
 
 function startRecording() {
@@ -985,9 +1076,8 @@ async function processRecording() {
   createSynthForLayer(layer);
   currentScene().layers.push(layer);
 
-  // Show only the new layer expanded
-  expandedLayers.clear();
-  expandedLayers.add(layer.id);
+  // Set new layer as active in ring view
+  activeLayerIdx = currentScene().layers.length - 1;
 
   // Update global scale from all layers
   updateGlobalScale();
@@ -1003,7 +1093,7 @@ async function processRecording() {
   // 5. AI suggestion
   requestAISuggestion(layer);
 
-  renderAllLayers();
+  renderRings(); renderEditPanel();
   if (!isPlaying) startTransport();
   setState('PLAYING');
 
@@ -1460,7 +1550,7 @@ async function requestAISuggestion(layer) {
     } else if (!layer.isPercussive && melodyRNN) {
       await suggestMelodyPattern(layer);
     }
-    renderAllLayers();
+    renderRings(); renderEditPanel();
   } catch(e) {
     console.warn('AI suggestion failed:', e);
   }
@@ -1623,29 +1713,125 @@ async function captureRoom() {
 }
 
 // ===== LAYER RENDERING =====
-const expandedLayers = new Set();
-let layersPanelMinimized = false;
-const layersToggle = document.getElementById('layers-toggle');
-layersToggle.addEventListener('click', () => {
-  layersPanelMinimized = !layersPanelMinimized;
-  layersArea.classList.toggle('minimized', layersPanelMinimized);
-  updateLayersToggle();
-});
-function updateLayersToggle() {
-  const count = currentScene().layers.length;
-  if (count === 0) { layersToggle.style.display = 'none'; return; }
-  layersToggle.style.display = 'flex';
-  layersToggle.textContent = layersPanelMinimized
-    ? '\u25B4 ' + count + ' layer' + (count > 1 ? 's' : '')
-    : '\u25BE ' + count + ' layer' + (count > 1 ? 's' : '');
-}
+const expandedLayers = new Set(); // kept for compatibility
 
-function renderAllLayers() {
-  // Remove all children except the toggle
-  while (layersToggle.nextSibling) layersArea.removeChild(layersToggle.nextSibling);
+function renderEditPanel() {
+  while (editPanel.firstChild) editPanel.removeChild(editPanel.firstChild);
   const scene = currentScene();
-  updateLayersToggle();
-  scene.layers.forEach((layer, idx) => {
+  if (scene.layers.length === 0) return;
+  activeLayerIdx = Math.min(activeLayerIdx, scene.layers.length - 1);
+  const layer = scene.layers[activeLayerIdx];
+  if (!layer) return;
+
+  editPanel.style.setProperty('--layer-color', layer.color);
+
+  // Header: type chip + mute/solo/delete + preset bar
+  const header = document.createElement('div');
+  header.className = 'panel-header';
+  const typeEl = document.createElement('div');
+  typeEl.className = 'layer-type';
+  typeEl.style.borderColor = layer.color;
+  typeEl.style.color = layer.color;
+  typeEl.textContent = layer.name || 'Synth';
+  header.appendChild(typeEl);
+
+  const muteBtn = document.createElement('button');
+  muteBtn.className = 'layer-btn' + (layer.muted ? ' active' : '');
+  muteBtn.textContent = 'M';
+  muteBtn.addEventListener('pointerdown', () => {
+    layer.muted = !layer.muted;
+    if (layer.synth) layer.synth.volume.value = layer.muted ? -Infinity : Tone.gainToDb(layer.volume);
+    muteBtn.classList.toggle('active', layer.muted);
+  });
+  header.appendChild(muteBtn);
+
+  const soloBtn = document.createElement('button');
+  soloBtn.className = 'layer-btn' + (layer.solo ? ' solo-active' : '');
+  soloBtn.textContent = 'S';
+  soloBtn.addEventListener('pointerdown', () => { layer.solo = !layer.solo; renderRings(); renderEditPanel(); });
+  header.appendChild(soloBtn);
+
+  const delBtn = document.createElement('button');
+  delBtn.className = 'layer-btn del';
+  delBtn.textContent = '\u00D7';
+  delBtn.addEventListener('pointerdown', () => {
+    if (layer.synth) { try { layer.synth.dispose(); } catch(e){} }
+    if (layer.synth2) { try { layer.synth2.dispose(); } catch(e){} }
+    if (layer.subOsc) { try { layer.subOsc.dispose(); } catch(e){} }
+    if (layer.drive) { try { layer.drive.dispose(); } catch(e){} }
+    if (layer.filter) { try { layer.filter.dispose(); } catch(e){} }
+    scene.layers.splice(activeLayerIdx, 1);
+    if (activeLayerIdx >= scene.layers.length) activeLayerIdx = Math.max(0, scene.layers.length - 1);
+    renderRings(); renderEditPanel();
+    if (scene.layers.length === 0) setState('IDLE');
+  });
+  header.appendChild(delBtn);
+  editPanel.appendChild(header);
+
+  // Preset bar
+  const presetCategory = layer.intentId || (layer.isPercussive ? 'kick' : 'bass');
+  const presets = PRESETS[presetCategory] || [];
+  if (presets.length > 0) {
+    const presetBar = document.createElement('div');
+    presetBar.className = 'preset-bar open';
+    presets.forEach(p => {
+      const pill = document.createElement('button');
+      pill.className = 'preset-pill' + (layer.activePreset === p.name ? ' active' : '');
+      pill.textContent = p.name;
+      pill.addEventListener('click', () => {
+        layer.oscType = p.osc; layer.envAttack = p.attack; layer.envDecay = p.decay;
+        layer.envSustain = p.sustain; layer.envRelease = p.release; layer.filterCutoff = p.filter;
+        layer.filterQ = p.q; layer.filtEnvAmount = p.filtEnv; layer.driveAmount = p.drive;
+        layer.activePreset = p.name;
+        createSynthForLayer(layer);
+        if (layer.filter) { layer.filter.frequency.value = layer.filterCutoff; layer.filter.Q.value = layer.filterQ; }
+        renderEditPanel();
+      });
+      presetBar.appendChild(pill);
+    });
+    editPanel.appendChild(presetBar);
+  }
+
+  // Volume
+  const volGroup = document.createElement('div');
+  volGroup.className = 'layer-slider-group';
+  const volLabel = document.createElement('label');
+  volLabel.textContent = 'Vol';
+  const volSlider = document.createElement('input');
+  volSlider.type = 'range'; volSlider.min = '0'; volSlider.max = '100';
+  volSlider.value = Math.round(layer.volume * 100);
+  volSlider.style.accentColor = layer.color;
+  volSlider.addEventListener('input', () => {
+    layer.volume = parseInt(volSlider.value) / 100;
+    if (layer.synth && !layer.muted) layer.synth.volume.value = Tone.gainToDb(layer.volume);
+  });
+  volGroup.appendChild(volLabel);
+  volGroup.appendChild(volSlider);
+  editPanel.appendChild(volGroup);
+
+  // Synth toggle
+  const synthToggle = document.createElement('button');
+  synthToggle.className = 'synth-toggle' + (layer.synthOpen ? ' open' : '');
+  synthToggle.textContent = layer.synthOpen ? 'Hide Controls \u25B4' : 'Show Controls \u25BE';
+  synthToggle.style.width = '100%';
+  synthToggle.style.fontSize = '11px';
+  synthToggle.style.padding = '8px';
+  synthToggle.style.borderRadius = '6px';
+
+  const synthPanel = document.createElement('div');
+  synthPanel.className = 'synth-panel' + (layer.synthOpen ? ' open' : '');
+
+  synthToggle.addEventListener('click', () => {
+    layer.synthOpen = !layer.synthOpen;
+    synthPanel.classList.toggle('open', layer.synthOpen);
+    synthToggle.classList.toggle('open', layer.synthOpen);
+    synthToggle.textContent = layer.synthOpen ? 'Hide Controls \u25B4' : 'Show Controls \u25BE';
+  });
+  editPanel.appendChild(synthToggle);
+
+  // Build synth groups into synthPanel (same as before but simplified)
+  { // scope block
+    const idx = activeLayerIdx;
     const strip = document.createElement('div');
     const isExpanded = expandedLayers.has(layer.id);
     strip.className = 'layer-strip' + (isExpanded ? ' active-strip' : ' collapsed');
@@ -1689,7 +1875,7 @@ function renderAllLayers() {
           });
         }
       }
-      renderAllLayers();
+      renderRings(); renderEditPanel();
     });
     header.appendChild(expandBtn);
 
@@ -1712,7 +1898,7 @@ function renderAllLayers() {
     soloBtn.style.touchAction = 'none';
     soloBtn.addEventListener('pointerdown', () => {
       layer.solo = !layer.solo;
-      renderAllLayers();
+      renderRings(); renderEditPanel();
     });
     header.appendChild(soloBtn);
 
@@ -1733,7 +1919,7 @@ function renderAllLayers() {
       if (layer.drive) { try { layer.drive.dispose(); } catch(e){} }
       if (layer.filter) { try { layer.filter.dispose(); } catch(e){} }
       scene.layers.splice(idx, 1);
-      renderAllLayers();
+      renderRings(); renderEditPanel();
       if (scene.layers.length === 0) setState('IDLE');
     });
     header.appendChild(delBtn);
@@ -1771,7 +1957,7 @@ function renderAllLayers() {
             layer.filter.frequency.value = layer.filterCutoff;
             layer.filter.Q.value = layer.filterQ;
           }
-          renderAllLayers();
+          renderRings(); renderEditPanel();
         });
         presetBar.appendChild(pill);
       });
@@ -2066,166 +2252,10 @@ function renderAllLayers() {
     driveGroup.appendChild(driveRow);
     synthPanel.appendChild(driveGroup);
 
-    strip.appendChild(synthPanel);
+    editPanel.appendChild(synthPanel);
+  } // end scope block
+} // end renderEditPanel
 
-    // Step grid
-    const grid = document.createElement('div');
-    grid.className = 'step-grid';
-    let selectedStep = -1;
-    const notePicker = document.createElement('div');
-    notePicker.className = 'note-picker';
-    notePicker.style.display = 'none';
-
-    function showNotePicker(s) {
-      selectedStep = s;
-      notePicker.style.display = 'flex';
-      while (notePicker.firstChild) notePicker.removeChild(notePicker.firstChild);
-      if (layer.isPercussive) { notePicker.style.display = 'none'; return; }
-      // Scale label
-      if (globalScale) {
-        const scLbl = document.createElement('span');
-        scLbl.className = 'scale-badge';
-        scLbl.style.fontSize = '9px';
-        scLbl.style.padding = '2px 6px';
-        scLbl.textContent = getScaleLabel();
-        notePicker.appendChild(scLbl);
-      }
-      const currentNote = (layer.notes && layer.notes[s]) || layer.note || 'C4';
-      const currentName = currentNote.replace(/\d+$/, '');
-      const currentOct = parseInt(currentNote.match(/\d+$/)[0]);
-      // Octave down
-      const octDown = document.createElement('button');
-      octDown.className = 'note-btn';
-      octDown.textContent = '\u2212';
-      octDown.addEventListener('click', () => {
-        const n = (layer.notes && layer.notes[s]) || layer.note || 'C4';
-        const nm = n.replace(/\d+$/, '');
-        const o = Math.max(1, parseInt(n.match(/\d+$/)[0]) - 1);
-        if (!layer.notes) layer.notes = new Array(16).fill(null);
-        layer.notes[s] = nm + o;
-        showNotePicker(s);
-      });
-      notePicker.appendChild(octDown);
-      // Scale notes or all notes
-      const scaleNotes = globalScale ? globalScale.notes : [0,1,2,3,4,5,6,7,8,9,10,11];
-      scaleNotes.forEach(pc => {
-        const n = NOTE_NAMES[pc];
-        const btn = document.createElement('button');
-        btn.className = 'note-btn' + (n === currentName ? ' active' : '');
-        btn.textContent = n;
-        btn.addEventListener('click', () => {
-          if (!layer.notes) layer.notes = new Array(16).fill(null);
-          layer.notes[s] = n + currentOct;
-          showNotePicker(s);
-        });
-        notePicker.appendChild(btn);
-      });
-      // Octave up
-      const octUp = document.createElement('button');
-      octUp.className = 'note-btn';
-      octUp.textContent = '+';
-      octUp.addEventListener('click', () => {
-        const n = (layer.notes && layer.notes[s]) || layer.note || 'C4';
-        const nm = n.replace(/\d+$/, '');
-        const o = Math.min(7, parseInt(n.match(/\d+$/)[0]) + 1);
-        if (!layer.notes) layer.notes = new Array(16).fill(null);
-        layer.notes[s] = nm + o;
-        showNotePicker(s);
-      });
-      notePicker.appendChild(octUp);
-      // Show current note
-      const cur = document.createElement('span');
-      cur.className = 'val';
-      cur.textContent = (layer.notes && layer.notes[s]) || currentNote;
-      notePicker.appendChild(cur);
-      // Highlight selected cell
-      grid.querySelectorAll('.step-cell').forEach(c => c.classList.remove('selected'));
-      grid.querySelector('[data-step="' + s + '"]').classList.add('selected');
-    }
-
-    for (let s = 0; s < 16; s++) {
-      const cell = document.createElement('div');
-      cell.className = 'step-cell';
-      cell.style.touchAction = 'none';
-      cell.style.position = 'relative';
-      cell.dataset.step = s;
-      if (layer.steps[s]) {
-        cell.classList.add('on');
-        // Show note label on active tonal steps
-        if (!layer.isPercussive && layer.notes && layer.notes[s]) {
-          const lbl = document.createElement('div');
-          lbl.className = 'step-note-label';
-          lbl.textContent = layer.notes[s].replace(/\d+$/, '');
-          cell.appendChild(lbl);
-        }
-      }
-      else if (layer.ghostSteps[s]) cell.classList.add('ghost');
-      if (s === currentStep) cell.classList.add('current');
-      cell.addEventListener('pointerdown', (e) => {
-        e.preventDefault();
-        if (layer.steps[s] && selectedStep !== s) {
-          // Select this step for note editing
-          showNotePicker(s);
-        } else if (layer.steps[s] && selectedStep === s) {
-          // Deselect / remove step
-          layer.steps[s] = false;
-          if (layer.notes) layer.notes[s] = null;
-          cell.classList.remove('on', 'selected');
-          while (cell.firstChild) cell.removeChild(cell.firstChild);
-          notePicker.style.display = 'none';
-          selectedStep = -1;
-        } else if (layer.ghostSteps[s]) {
-          layer.ghostSteps[s] = false;
-          layer.steps[s] = true;
-          cell.classList.remove('ghost');
-          cell.classList.add('on');
-        } else {
-          layer.steps[s] = true;
-          if (!layer.notes) layer.notes = new Array(16).fill(null);
-          layer.notes[s] = layer.note || 'C4';
-          cell.classList.add('on');
-          showNotePicker(s);
-        }
-      });
-      grid.appendChild(cell);
-    }
-    strip.appendChild(grid);
-    strip.appendChild(notePicker);
-
-    // Controls row
-    const controls = document.createElement('div');
-    controls.className = 'layer-controls';
-
-    // Volume
-    const volGroup = document.createElement('div');
-    volGroup.className = 'layer-slider-group';
-    const volLabel = document.createElement('label');
-    volLabel.textContent = 'Vol';
-    const volSlider = document.createElement('input');
-    volSlider.type = 'range';
-    volSlider.min = '0';
-    volSlider.max = '100';
-    volSlider.value = Math.round(layer.volume * 100);
-    volSlider.style.accentColor = layer.color;
-    let volDebounce = null;
-    volSlider.addEventListener('input', () => {
-      clearTimeout(volDebounce);
-      volDebounce = setTimeout(() => {
-        layer.volume = parseInt(volSlider.value) / 100;
-        if (layer.synth && !layer.muted) {
-          layer.synth.volume.value = Tone.gainToDb(layer.volume);
-        }
-      }, 30);
-    });
-    volGroup.appendChild(volLabel);
-    volGroup.appendChild(volSlider);
-    controls.appendChild(volGroup);
-
-
-    strip.appendChild(controls);
-    layersArea.appendChild(strip);
-  });
-}
 
 // ===== VISUAL UPDATE LOOP =====
 function updateVisuals() {
@@ -2249,9 +2279,6 @@ function updateVisuals() {
   }
   if (!isQuarter) pulseTick._fired = false;
 
-  // Beat ring segments
-  const segs = beatRing.querySelectorAll('.seg-bg');
-
   // During recording, fill segments when mic picks up sound
   if (appState === 'RECORDING' && recAnalyser && currentStep !== recLastStep) {
     recLastStep = currentStep;
@@ -2265,24 +2292,11 @@ function updateVisuals() {
     }
   }
 
-  // Show rec-filled during recording, or last layer's steps after
-  const lastLayer = currentScene().layers.length > 0 ? currentScene().layers[currentScene().layers.length - 1] : null;
-  segs.forEach((seg, i) => {
-    const isActive = i === currentStep;
-    const isFilled = appState === 'RECORDING' ? recFilledSteps[i] : (lastLayer && lastLayer.steps[i]);
-    seg.classList.toggle('active', isActive);
-    seg.classList.toggle('rec-filled', !isActive && isFilled && appState !== 'INIT');
-  });
-
   // Step indicator
   stepIndicator.textContent = 'Step: ' + (currentStep + 1) + ' / 16';
 
-  // Update current step highlight on layer grids
-  const cells = layersArea.querySelectorAll('.step-cell');
-  cells.forEach(cell => {
-    const step = parseInt(cell.dataset.step);
-    cell.classList.toggle('current', step === currentStep);
-  });
+  // Re-render rings to update current step highlight
+  renderRings();
 }
 requestAnimationFrame(updateVisuals);
 
