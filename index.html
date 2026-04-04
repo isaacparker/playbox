@@ -596,9 +596,6 @@ async function initAudio() {
     }
     await Tone.start();
     audioContext = Tone.context.rawContext;
-    // Master limiter to prevent feedback/clipping
-    const limiter = new Tone.Limiter(-3).toDestination();
-    Tone.Destination.chain(limiter);
     Tone.Transport.bpm.value = currentBPM;
     Tone.Transport.loop = true;
     Tone.Transport.loopStart = 0;
