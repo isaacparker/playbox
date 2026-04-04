@@ -824,9 +824,16 @@ function stopTransport() {
   playBtn.classList.remove('active');
 }
 
-startBtn.addEventListener('click', initAudio);
-startBtn.addEventListener('touchend', (e) => { e.preventDefault(); initAudio(); });
-// Debug: show errors on screen
+function safeInitAudio() {
+  overlay.querySelector('p').textContent = 'Starting...';
+  initAudio().then(function() {
+    overlay.querySelector('p').textContent = 'OK';
+  }).catch(function(e) {
+    overlay.querySelector('p').textContent = 'Init failed: ' + e.message;
+  });
+}
+startBtn.addEventListener('click', safeInitAudio);
+startBtn.addEventListener('touchend', (e) => { e.preventDefault(); safeInitAudio(); });
 window.onerror = function(msg, url, line) {
   overlay.querySelector('p').textContent = 'Error L' + line + ': ' + msg;
 };
@@ -837,7 +844,7 @@ stopBtn.addEventListener('pointerdown', () => { if (appState !== 'INIT') stopTra
 const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
 if (!isIOS && navigator.permissions && navigator.permissions.query) {
   navigator.permissions.query({ name: 'microphone' }).then(result => {
-    if (result.state === 'granted') initAudio();
+    if (result.state === 'granted') safeInitAudio();
   }).catch(() => {});
 }
 
