@@ -392,14 +392,24 @@ const intentRing = document.getElementById('intent-ring');
 
 // ===== SOUND INTENT =====
 const INTENTS = [
-  { id: 'kick',  label: 'Kick',  perc: true,  osc: 'brown', attack: 0.001, decay: 0.25, sustain: 0, release: 0, filter: 600,  q: 4,   drive: 0.3, filtEnv: 8000 },
-  { id: 'snare', label: 'Snare', perc: true,  osc: 'white', attack: 0.001, decay: 0.15, sustain: 0, release: 0, filter: 3000, q: 1.5, drive: 0.2, filtEnv: 6000 },
-  { id: 'hat',   label: 'Hat',   perc: true,  osc: 'white', attack: 0.001, decay: 0.04, sustain: 0, release: 0, filter: 9000, q: 1,   drive: 0,   filtEnv: 0 },
-  { id: 'bass',  label: 'Bass',  perc: false, osc: 'square',   attack: 0.005, decay: 0.2,  sustain: 0.7, release: 0.08, filter: 800,  q: 3, drive: 0.25, filtEnv: 3000 },
-  { id: 'lead',  label: 'Lead',  perc: false, osc: 'sawtooth', attack: 0.005, decay: 0.15, sustain: 0.6, release: 0.15, filter: 4000, q: 2, drive: 0.15, filtEnv: 5000 },
-  { id: 'pad',   label: 'Pad',   perc: false, osc: 'sine',     attack: 0.3,   decay: 0.5,  sustain: 0.8, release: 0.6,  filter: 2000, q: 0.5, drive: 0, filtEnv: 2000 },
+  { id: 'kick',  label: 'Kick',  color: '#0ff', rgb: '0,255,255',     perc: true,  osc: 'brown', attack: 0.001, decay: 0.25, sustain: 0, release: 0, filter: 600,  q: 4,   drive: 0.3, filtEnv: 8000 },
+  { id: 'snare', label: 'Snare', color: '#f0f', rgb: '255,0,255',     perc: true,  osc: 'white', attack: 0.001, decay: 0.15, sustain: 0, release: 0, filter: 3000, q: 1.5, drive: 0.2, filtEnv: 6000 },
+  { id: 'hat',   label: 'Hat',   color: '#0f0', rgb: '0,255,0',       perc: true,  osc: 'white', attack: 0.001, decay: 0.04, sustain: 0, release: 0, filter: 9000, q: 1,   drive: 0,   filtEnv: 0 },
+  { id: 'bass',  label: 'Bass',  color: '#fa0', rgb: '255,170,0',     perc: false, osc: 'square',   attack: 0.005, decay: 0.2,  sustain: 0.7, release: 0.08, filter: 800,  q: 3, drive: 0.25, filtEnv: 3000 },
+  { id: 'lead',  label: 'Lead',  color: '#08f', rgb: '0,136,255',     perc: false, osc: 'sawtooth', attack: 0.005, decay: 0.15, sustain: 0.6, release: 0.15, filter: 4000, q: 2, drive: 0.15, filtEnv: 5000 },
+  { id: 'pad',   label: 'Pad',   color: '#f5a', rgb: '255,85,170',    perc: false, osc: 'sine',     attack: 0.3,   decay: 0.5,  sustain: 0.8, release: 0.6,  filter: 2000, q: 0.5, drive: 0, filtEnv: 2000 },
 ];
 let selectedIntent = null;
+
+function setGlobalAccent(color, rgb) {
+  const root = document.documentElement;
+  root.style.setProperty('--accent', color);
+  root.style.setProperty('--accent-rgb', rgb);
+  root.style.setProperty('--accent-fill-idle', 'rgba(' + rgb + ',0.12)');
+  root.style.setProperty('--accent-fill-active', 'rgba(' + rgb + ',1)');
+  root.style.setProperty('--accent-fill-subtle', 'rgba(' + rgb + ',0.08)');
+  root.style.setProperty('--accent-fill-medium', 'rgba(' + rgb + ',0.5)');
+}
 
 // ===== PRESET PATCHES =====
 const PRESETS = {
@@ -464,9 +474,11 @@ function createIntentChips() {
       if (selectedIntent === intent.id) {
         selectedIntent = null;
         flowSub.textContent = 'voice \u2192 synth';
+        setGlobalAccent('#0ff', '0,255,255');
       } else {
         selectedIntent = intent.id;
         flowSub.textContent = intent.label;
+        setGlobalAccent(intent.color, intent.rgb);
       }
       intentRing.querySelectorAll('.intent-chip').forEach(c => {
         c.classList.toggle('active', c.textContent === (selectedIntent ? intent.label : ''));
@@ -476,6 +488,14 @@ function createIntentChips() {
   });
 }
 createIntentChips();
+
+// Start with Kick selected
+selectedIntent = 'kick';
+setGlobalAccent(INTENTS[0].color, INTENTS[0].rgb);
+flowSub.textContent = 'Kick';
+intentRing.querySelectorAll('.intent-chip').forEach(c => {
+  c.classList.toggle('active', c.textContent === 'Kick');
+});
 
 function getSelectedIntent() {
   if (!selectedIntent) return null;
@@ -922,7 +942,8 @@ async function processRecording() {
 
   // 3. Create layer with per-step notes and durations
   const layerIdx = currentScene().layers.length;
-  const color = LAYER_COLORS[layerIdx % LAYER_COLORS.length];
+  const intentObj = INTENTS.find(i => i.id === intentId);
+  const color = intentObj ? intentObj.color : LAYER_COLORS[layerIdx % LAYER_COLORS.length];
   const layer = {
     id: Date.now(),
     name: layerName,
@@ -980,6 +1001,19 @@ async function processRecording() {
   renderAllLayers();
   if (!isPlaying) startTransport();
   setState('PLAYING');
+
+  // Auto-advance to next intent
+  if (selectedIntent) {
+    const currentIdx = INTENTS.findIndex(i => i.id === selectedIntent);
+    const nextIdx = (currentIdx + 1) % INTENTS.length;
+    const next = INTENTS[nextIdx];
+    selectedIntent = next.id;
+    setGlobalAccent(next.color, next.rgb);
+    flowSub.textContent = next.label;
+    intentRing.querySelectorAll('.intent-chip').forEach(c => {
+      c.classList.toggle('active', c.textContent === next.label);
+    });
+  }
 }
 
 // ===== FIND LOUDEST REGION =====
