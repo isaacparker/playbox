@@ -92,14 +92,24 @@ font-size:10px;color:var(--text-dim);margin-left:auto;white-space:nowrap;
 flex:1;display:flex;align-items:center;justify-content:center;
 position:relative;min-height:200px;touch-action:none;
 }
+#layer-nav{
+display:flex;align-items:center;gap:6px;padding:4px 12px;
+overflow-x:auto;-webkit-overflow-scrolling:touch;flex-shrink:0;
+justify-content:center;
+}
+#layer-nav .nav-chip{
+font-size:12px;padding:6px 14px;background:var(--surface3);color:var(--text-dim);
+border:1px solid var(--border);border-radius:10px;cursor:pointer;touch-action:none;
+white-space:nowrap;flex-shrink:0;transition:all 0.15s;
+}
+#layer-nav .nav-chip.active{color:var(--accent);border-color:var(--accent);background:var(--accent-fill-subtle)}
 #rings-svg{
 position:absolute;width:340px;height:340px;
 }
-#rings-svg .seg{stroke:none;cursor:pointer;transition:fill 0.08s}
-#rings-svg .seg.on{fill-opacity:1}
-#rings-svg .seg.current-step{stroke:var(--text);stroke-width:2}
-#rings-svg .ring-border{fill:none;stroke-width:0.5}
-#rings-svg .divider-line{stroke-width:0.5}
+#rings-svg .seg{stroke:none;cursor:pointer;transition:fill 0.1s}
+#rings-svg .seg.current-step{stroke:var(--text);stroke-width:1.5}
+#rings-svg .ring-border{fill:none;stroke-width:0.5;opacity:0.6}
+#rings-svg .divider-line{stroke-width:0.5;opacity:0.4}
 #pulse-wave{
 position:absolute;width:300px;height:300px;border-radius:50%;
 border:2px solid var(--accent);opacity:0;pointer-events:none;
@@ -125,7 +135,7 @@ animation:pulse-tick-expand 0.4s ease-out forwards;
 100%{opacity:0;transform:scale(1.2)}
 }
 #flow-btn{
-position:relative;z-index:10;width:200px;height:200px;border-radius:50%;
+position:relative;z-index:10;width:140px;height:140px;border-radius:50%;
 background:radial-gradient(circle,#111 0%,#0a0a0a 100%);
 border:3px solid transparent;cursor:pointer;
 display:flex;align-items:center;justify-content:center;flex-direction:column;
@@ -148,17 +158,6 @@ animation:recording-pulse 1s ease-in-out infinite;
 #flow-label{font-size:14px;font-weight:700;pointer-events:none;color:var(--text);transition:color 0.15s}
 #flow-btn.recording #flow-label{color:var(--record)}
 #flow-sub{font-size:10px;color:var(--text-dim);pointer-events:none;margin-top:4px}
-#intent-ring{
-position:absolute;width:300px;height:300px;pointer-events:none;z-index:1;
-}
-.intent-chip{
-position:absolute;pointer-events:auto;
-font-size:12px;padding:6px 12px;background:var(--surface3);color:var(--text-dim);
-border:1px solid var(--border);border-radius:10px;cursor:pointer;touch-action:none;
-transform:translate(-50%,-50%);white-space:nowrap;
--webkit-user-select:none;user-select:none;-webkit-touch-callout:none;
-}
-.intent-chip.active{color:var(--accent);border-color:var(--accent);background:var(--accent-fill-subtle)}
 #step-indicator{
 position:absolute;bottom:12px;left:50%;transform:translateX(-50%);
 font-size:11px;color:var(--text-dim);font-variant-numeric:tabular-nums;
@@ -296,11 +295,11 @@ min-height:32px;display:flex;align-items:center;
 <button class="transport-btn" id="dup-scene-btn" title="Duplicate Scene" style="display:none">+S</button>
 <span id="scale-badge" class="scale-badge" style="display:none;margin-left:auto"></span>
 </div>
+<div id="layer-nav"></div>
 <div id="center">
 <div id="pulse-wave"></div>
 <div id="pulse-tick"></div>
 <svg id="rings-svg" viewBox="0 0 340 340"></svg>
-<div id="intent-ring"></div>
 <button id="flow-btn">
 <span id="flow-label">Hold to Record</span>
 <span id="flow-sub">voice &rarr; synth</span>
@@ -375,7 +374,7 @@ const flowBtn = document.getElementById('flow-btn');
 const flowLabel = document.getElementById('flow-label');
 const flowSub = document.getElementById('flow-sub');
 const stepIndicator = document.getElementById('step-indicator');
-const intentRing = document.getElementById('intent-ring');
+const intentRing = null; // removed, replaced by layer-nav
 
 // ===== SOUND INTENT =====
 const INTENTS = [
@@ -445,7 +444,7 @@ const PRESETS = {
 };
 
 function createIntentChips() {
-  while (intentRing.firstChild) intentRing.removeChild(intentRing.firstChild);
+  if (!intentRing) return; // replaced by layer nav
   INTENTS.forEach((intent, i) => {
     const chip = document.createElement('button');
     chip.className = 'intent-chip';
@@ -467,22 +466,17 @@ function createIntentChips() {
         flowSub.textContent = intent.label;
         setGlobalAccent(intent.color, intent.rgb);
       }
-      intentRing.querySelectorAll('.intent-chip').forEach(c => {
+      if(intentRing) intentRing.querySelectorAll('.intent-chip').forEach(c => {
         c.classList.toggle('active', c.textContent === (selectedIntent ? intent.label : ''));
       });
     });
-    intentRing.appendChild(chip);
+    if(intentRing) intentRing.appendChild(chip);
   });
 }
-createIntentChips();
-
 // Start with Kick selected
 selectedIntent = 'kick';
 setGlobalAccent(INTENTS[0].color, INTENTS[0].rgb);
 flowSub.textContent = 'Kick';
-intentRing.querySelectorAll('.intent-chip').forEach(c => {
-  c.classList.toggle('active', c.textContent === 'Kick');
-});
 
 function getSelectedIntent() {
   if (!selectedIntent) return null;
@@ -494,131 +488,109 @@ let recLastStep = -1;
 let recAnalyser = null;
 
 // ===== CONCENTRIC RING SYSTEM =====
-const RING_CX = 170, RING_CY = 170;
-const RING_ACTIVE_OUTER = 158, RING_ACTIVE_INNER = 108;
-const RING_BAND = RING_ACTIVE_OUTER - RING_ACTIVE_INNER; // 50
-const RING_GAP = 3;
+const CX = 170, CY = 170;
+const ACTIVE_R_OUTER = 155, ACTIVE_R_INNER = 105; // active band = 50px
+const ADJACENT_BAND = 14; // thin rings for neighbors
+const RING_GAP = 2;
 let activeLayerIdx = 0;
-let ringDragStart = null;
-let ringOffset = 0; // smooth scroll offset
+const layerNav = document.getElementById('layer-nav');
 
 function arcPath(cx, cy, rOuter, rInner, startAngle, endAngle) {
-  const x1o = cx + Math.cos(startAngle) * rOuter;
-  const y1o = cy + Math.sin(startAngle) * rOuter;
-  const x2o = cx + Math.cos(endAngle) * rOuter;
-  const y2o = cy + Math.sin(endAngle) * rOuter;
-  const x1i = cx + Math.cos(endAngle) * rInner;
-  const y1i = cy + Math.sin(endAngle) * rInner;
-  const x2i = cx + Math.cos(startAngle) * rInner;
-  const y2i = cy + Math.sin(startAngle) * rInner;
-  return 'M ' + x1o + ' ' + y1o +
-    ' A ' + rOuter + ' ' + rOuter + ' 0 0 1 ' + x2o + ' ' + y2o +
-    ' L ' + x1i + ' ' + y1i +
-    ' A ' + rInner + ' ' + rInner + ' 0 0 0 ' + x2i + ' ' + y2i + ' Z';
+  var x1o = cx + Math.cos(startAngle) * rOuter;
+  var y1o = cy + Math.sin(startAngle) * rOuter;
+  var x2o = cx + Math.cos(endAngle) * rOuter;
+  var y2o = cy + Math.sin(endAngle) * rOuter;
+  var x1i = cx + Math.cos(endAngle) * rInner;
+  var y1i = cy + Math.sin(endAngle) * rInner;
+  var x2i = cx + Math.cos(startAngle) * rInner;
+  var y2i = cy + Math.sin(startAngle) * rInner;
+  return 'M '+x1o+' '+y1o+' A '+rOuter+' '+rOuter+' 0 0 1 '+x2o+' '+y2o+
+    ' L '+x1i+' '+y1i+' A '+rInner+' '+rInner+' 0 0 0 '+x2i+' '+y2i+' Z';
+}
+
+function hexToRgb(hex) {
+  hex = hex.replace('#','');
+  if(hex.length===3) hex=hex[0]+hex[0]+hex[1]+hex[1]+hex[2]+hex[2];
+  return parseInt(hex.substring(0,2),16)+','+parseInt(hex.substring(2,4),16)+','+parseInt(hex.substring(4,6),16);
+}
+
+function drawRing(ns, rOuter, rInner, layer, color, opacity, isActive) {
+  var g = document.createElementNS(ns, 'g');
+  g.setAttribute('opacity', opacity);
+  var rgb = hexToRgb(color);
+  var fillIdle = 'rgba('+rgb+',0.12)';
+  var fillOn = color;
+  for (var i = 0; i < 16; i++) {
+    var a0 = (i/16)*Math.PI*2 - Math.PI/2;
+    var a1 = ((i+1)/16)*Math.PI*2 - Math.PI/2;
+    var p = document.createElementNS(ns, 'path');
+    p.setAttribute('d', arcPath(CX, CY, rOuter, rInner, a0, a1));
+    var on = layer && layer.steps[i];
+    var rec = !layer && recFilledSteps[i];
+    p.setAttribute('fill', (on||rec) ? fillOn : fillIdle);
+    p.setAttribute('class', 'seg'+(i===currentStep?' current-step':''));
+    if (isActive && layer) {
+      p.dataset.step = i;
+      p.addEventListener('pointerdown', handleRingStepTap);
+    }
+    g.appendChild(p);
+  }
+  // Borders
+  var ci = document.createElementNS(ns,'circle');
+  ci.setAttribute('cx',CX); ci.setAttribute('cy',CY); ci.setAttribute('r',rInner);
+  ci.setAttribute('class','ring-border'); ci.setAttribute('stroke',color);
+  g.appendChild(ci);
+  var co = document.createElementNS(ns,'circle');
+  co.setAttribute('cx',CX); co.setAttribute('cy',CY); co.setAttribute('r',rOuter);
+  co.setAttribute('class','ring-border'); co.setAttribute('stroke',color);
+  g.appendChild(co);
+  // Dividers
+  for (var i = 0; i < 16; i++) {
+    var a = (i/16)*Math.PI*2 - Math.PI/2;
+    var ln = document.createElementNS(ns,'line');
+    ln.setAttribute('x1',CX+Math.cos(a)*rInner); ln.setAttribute('y1',CY+Math.sin(a)*rInner);
+    ln.setAttribute('x2',CX+Math.cos(a)*rOuter); ln.setAttribute('y2',CY+Math.sin(a)*rOuter);
+    ln.setAttribute('class','divider-line'); ln.setAttribute('stroke',color);
+    g.appendChild(ln);
+  }
+  ringsSvg.appendChild(g);
 }
 
 function renderRings() {
   while (ringsSvg.firstChild) ringsSvg.removeChild(ringsSvg.firstChild);
   var ns = 'http://www.w3.org/2000/svg';
   var layers = currentScene().layers;
+
+  // Draw inner neighbors (inside the active ring, from innermost outward)
+  var innerR = ACTIVE_R_INNER;
+  for (var i = activeLayerIdx - 1; i >= 0 && i >= activeLayerIdx - 2; i--) {
+    var dist = activeLayerIdx - i;
+    var band = ADJACENT_BAND / dist;
+    var rO = innerR - RING_GAP;
+    var rI = Math.max(8, rO - band);
+    if (rI < 8) break;
+    drawRing(ns, rO, rI, layers[i], layers[i].color, 0.35 / dist, false);
+    innerR = rI;
+  }
+
+  // Draw active ring
   if (layers.length === 0) {
-    // Empty state — draw one default ring
-    drawRing(ns, RING_ACTIVE_OUTER, RING_ACTIVE_INNER, null, 'var(--accent)', 1, true);
-    return;
+    drawRing(ns, ACTIVE_R_OUTER, ACTIVE_R_INNER, null, 'var(--accent)', 1, true);
+  } else if (layers[activeLayerIdx]) {
+    drawRing(ns, ACTIVE_R_OUTER, ACTIVE_R_INNER, layers[activeLayerIdx], layers[activeLayerIdx].color, 1, true);
   }
 
-  // Calculate ring positions — active is at the main band, others scale down concentrically
-  for (var li = 0; li < layers.length; li++) {
-    var offset = li - activeLayerIdx;
-    var scale = 1 - Math.abs(offset) * 0.35;
-    if (scale <= 0.1) continue; // too far away, don't render
-    scale = Math.max(0.15, scale);
-
-    var bandWidth = RING_BAND * scale;
-    var centerR;
-    if (offset === 0) {
-      centerR = (RING_ACTIVE_OUTER + RING_ACTIVE_INNER) / 2;
-    } else if (offset > 0) {
-      // Outside the active ring
-      centerR = RING_ACTIVE_OUTER + RING_GAP + (offset - 0.5) * (bandWidth + RING_GAP);
-    } else {
-      // Inside the active ring
-      centerR = RING_ACTIVE_INNER - RING_GAP - (Math.abs(offset) - 0.5) * (bandWidth + RING_GAP);
-    }
-    if (centerR < 10) continue;
-
-    var rOuter = centerR + bandWidth / 2;
-    var rInner = Math.max(5, centerR - bandWidth / 2);
-    var layer = layers[li];
-    var isActive = li === activeLayerIdx;
-    var opacity = isActive ? 1 : 0.3 + scale * 0.3;
-
-    drawRing(ns, rOuter, rInner, layer, layer.color, opacity, isActive);
+  // Draw outer neighbors (outside the active ring, from closest outward)
+  var outerR = ACTIVE_R_OUTER;
+  for (var i = activeLayerIdx + 1; i < layers.length && i <= activeLayerIdx + 2; i++) {
+    var dist = i - activeLayerIdx;
+    var band = ADJACENT_BAND / dist;
+    var rI = outerR + RING_GAP;
+    var rO = rI + band;
+    if (rO > 168) break;
+    drawRing(ns, rO, rI, layers[i], layers[i].color, 0.35 / dist, false);
+    outerR = rO;
   }
-}
-
-function drawRing(ns, rOuter, rInner, layer, color, opacity, isActive) {
-  var group = document.createElementNS(ns, 'g');
-  group.setAttribute('opacity', opacity);
-
-  var fillIdle = 'rgba(' + hexToRgb(color) + ',0.12)';
-  var fillOn = color;
-
-  // Segments
-  for (var i = 0; i < 16; i++) {
-    var startAngle = (i / 16) * Math.PI * 2 - Math.PI / 2;
-    var endAngle = ((i + 1) / 16) * Math.PI * 2 - Math.PI / 2;
-    var path = document.createElementNS(ns, 'path');
-    path.setAttribute('d', arcPath(RING_CX, RING_CY, rOuter, rInner, startAngle, endAngle));
-    var stepOn = layer && layer.steps[i];
-    var isRecFilled = !layer && recFilledSteps[i];
-    path.setAttribute('fill', (stepOn || isRecFilled) ? fillOn : fillIdle);
-    path.setAttribute('class', 'seg' + (stepOn ? ' on' : '') + (i === currentStep ? ' current-step' : ''));
-    if (isActive && layer) {
-      path.dataset.step = i;
-      path.dataset.layerIdx = activeLayerIdx;
-      path.addEventListener('pointerdown', handleRingStepTap);
-    }
-    group.appendChild(path);
-  }
-
-  // Inner/outer borders
-  var inner = document.createElementNS(ns, 'circle');
-  inner.setAttribute('cx', RING_CX);
-  inner.setAttribute('cy', RING_CY);
-  inner.setAttribute('r', rInner);
-  inner.setAttribute('class', 'ring-border');
-  inner.setAttribute('stroke', color);
-  group.appendChild(inner);
-
-  var outer = document.createElementNS(ns, 'circle');
-  outer.setAttribute('cx', RING_CX);
-  outer.setAttribute('cy', RING_CY);
-  outer.setAttribute('r', rOuter);
-  outer.setAttribute('class', 'ring-border');
-  outer.setAttribute('stroke', color);
-  group.appendChild(outer);
-
-  // Dividers
-  for (var i = 0; i < 16; i++) {
-    var angle = (i / 16) * Math.PI * 2 - Math.PI / 2;
-    var line = document.createElementNS(ns, 'line');
-    line.setAttribute('x1', RING_CX + Math.cos(angle) * rInner);
-    line.setAttribute('y1', RING_CY + Math.sin(angle) * rInner);
-    line.setAttribute('x2', RING_CX + Math.cos(angle) * rOuter);
-    line.setAttribute('y2', RING_CY + Math.sin(angle) * rOuter);
-    line.setAttribute('class', 'divider-line');
-    line.setAttribute('stroke', color);
-    group.appendChild(line);
-  }
-
-  ringsSvg.appendChild(group);
-}
-
-function hexToRgb(hex) {
-  hex = hex.replace('#', '');
-  if (hex.length === 3) hex = hex[0]+hex[0]+hex[1]+hex[1]+hex[2]+hex[2];
-  return parseInt(hex.substring(0,2),16) + ',' + parseInt(hex.substring(2,4),16) + ',' + parseInt(hex.substring(4,6),16);
 }
 
 function handleRingStepTap(e) {
@@ -626,46 +598,59 @@ function handleRingStepTap(e) {
   var layer = currentScene().layers[activeLayerIdx];
   if (!layer) return;
   layer.steps[step] = !layer.steps[step];
-  if (layer.steps[step] && !layer.notes[step]) {
+  if (layer.steps[step] && layer.notes && !layer.notes[step]) {
     layer.notes[step] = layer.note || 'C4';
   }
   renderRings();
-  renderEditPanel();
 }
 
-// Radial drag to scroll layers
-document.getElementById('center').addEventListener('pointerdown', function(e) {
-  if (e.target.closest('#flow-btn') || e.target.closest('#intent-ring') || e.target.closest('#room-wrap')) return;
-  var rect = ringsSvg.getBoundingClientRect();
-  var cx = rect.left + rect.width / 2;
-  var cy = rect.top + rect.height / 2;
-  var dist = Math.sqrt(Math.pow(e.clientX - cx, 2) + Math.pow(e.clientY - cy, 2));
-  ringDragStart = { y: e.clientY, dist: dist, idx: activeLayerIdx };
-});
-
-document.addEventListener('pointermove', function(e) {
-  if (!ringDragStart) return;
-  var delta = ringDragStart.y - e.clientY;
-  var steps = Math.round(delta / 40); // 40px per layer
-  var newIdx = ringDragStart.idx + steps;
+// ===== LAYER NAV BAR =====
+function renderLayerNav() {
+  while (layerNav.firstChild) layerNav.removeChild(layerNav.firstChild);
   var layers = currentScene().layers;
-  if (layers.length > 0) {
-    newIdx = Math.max(0, Math.min(layers.length - 1, newIdx));
-    if (newIdx !== activeLayerIdx) {
-      activeLayerIdx = newIdx;
-      var layer = layers[activeLayerIdx];
-      var intentObj = INTENTS.find(function(i) { return i.color === layer.color; });
-      if (intentObj) setGlobalAccent(intentObj.color, intentObj.rgb);
+  // Intent chips (for recording new layers)
+  INTENTS.forEach(function(intent) {
+    var chip = document.createElement('button');
+    chip.className = 'nav-chip';
+    // Check if any layer uses this intent
+    var existingIdx = layers.findIndex(function(l) { return l.intentId === intent.id; });
+    var isSelected = selectedIntent === intent.id;
+    var isActive = existingIdx >= 0 && existingIdx === activeLayerIdx;
+    if (isActive || isSelected) {
+      chip.classList.add('active');
+      chip.style.color = intent.color;
+      chip.style.borderColor = intent.color;
+    }
+    if (existingIdx >= 0) {
+      // Has a recorded layer — show filled dot
+      chip.textContent = '\u25CF ' + intent.label;
+      chip.style.color = intent.color;
+    } else {
+      chip.textContent = intent.label;
+    }
+    chip.addEventListener('click', function() {
+      if (existingIdx >= 0) {
+        // Switch to existing layer
+        activeLayerIdx = existingIdx;
+        setGlobalAccent(intent.color, intent.rgb);
+        selectedIntent = intent.id;
+        flowSub.textContent = intent.label;
+      } else {
+        // Select intent for next recording
+        selectedIntent = intent.id;
+        setGlobalAccent(intent.color, intent.rgb);
+        flowSub.textContent = intent.label;
+      }
+      renderLayerNav();
       renderRings();
       renderEditPanel();
-    }
-  }
-});
-
-document.addEventListener('pointerup', function() { ringDragStart = null; });
-document.addEventListener('pointercancel', function() { ringDragStart = null; });
+    });
+    layerNav.appendChild(chip);
+  });
+}
 
 renderRings();
+renderLayerNav();
 
 // ===== SCENE UI =====
 function renderScenes() {
@@ -1115,10 +1100,8 @@ async function processRecording() {
     selectedIntent = next.id;
     setGlobalAccent(next.color, next.rgb);
     flowSub.textContent = next.label;
-    intentRing.querySelectorAll('.intent-chip').forEach(c => {
-      c.classList.toggle('active', c.textContent === next.label);
-    });
   }
+  renderLayerNav();
 }
 
 // ===== FIND LOUDEST REGION =====
@@ -1880,7 +1863,7 @@ function renderEditPanel() {
           setGlobalAccent(intentObj.color, intentObj.rgb);
           selectedIntent = intentObj.id;
           flowSub.textContent = intentObj.label;
-          intentRing.querySelectorAll('.intent-chip').forEach(c => {
+          if(intentRing) intentRing.querySelectorAll('.intent-chip').forEach(c => {
             c.classList.toggle('active', c.textContent === intentObj.label);
           });
         }
