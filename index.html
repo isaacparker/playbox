@@ -48,7 +48,7 @@ display:flex;align-items:center;justify-content:center;z-index:1000;
 flex-direction:column;gap:16px;
 }
 #overlay .start-btn{
-font-size:24px;color:var(--text);background:none;border:2px solid var(--text);
+font-size:24px;color:var(--accent);background:none;border:2px solid var(--accent);
 border-radius:50%;width:300px;height:300px;cursor:pointer;
 display:flex;align-items:center;justify-content:center;
 transition:transform 0.2s;
@@ -184,11 +184,8 @@ z-index:3;min-height:24px;
 }
 .layer-strip{
 display:flex;flex-direction:column;padding:10px 12px;
-border-bottom:1px solid var(--border);gap:6px;
+border-bottom:1px solid var(--accent);gap:6px;
 }
-.layer-strip.inactive{opacity:0.5;filter:saturate(0.2)}
-.layer-strip.inactive .step-cell{border-color:var(--border)}
-.layer-strip.inactive .step-cell.on{opacity:0.6}
 .layer-strip.collapsed .step-grid,
 .layer-strip.collapsed .layer-controls,
 .layer-strip.collapsed .synth-panel,
@@ -1646,9 +1643,7 @@ function renderAllLayers() {
   scene.layers.forEach((layer, idx) => {
     const strip = document.createElement('div');
     const isExpanded = expandedLayers.has(layer.id);
-    // Active = expanded or most recent layer; inactive = everything else
-    const isActive = isExpanded || idx === scene.layers.length - 1;
-    strip.className = 'layer-strip' + (isExpanded ? '' : ' collapsed') + (isActive ? '' : ' inactive');
+    strip.className = 'layer-strip' + (isExpanded ? '' : ' collapsed');
     strip.style.setProperty('--layer-color', layer.color);
 
     // Header row
@@ -1671,15 +1666,8 @@ function renderAllLayers() {
     expandBtn.style.color = layer.color;
     expandBtn.textContent = isExpanded ? '\u25B4' : '\u25BE';
     expandBtn.addEventListener('click', () => {
-      if (expandedLayers.has(layer.id)) {
-        expandedLayers.delete(layer.id);
-      } else {
-        expandedLayers.clear();
-        expandedLayers.add(layer.id);
-        // Shift UI accent to this layer's color
-        const intentObj = INTENTS.find(i => i.color === layer.color);
-        if (intentObj) setGlobalAccent(intentObj.color, intentObj.rgb);
-      }
+      if (expandedLayers.has(layer.id)) expandedLayers.delete(layer.id);
+      else expandedLayers.add(layer.id);
       renderAllLayers();
     });
     header.appendChild(expandBtn);
