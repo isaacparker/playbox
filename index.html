@@ -650,22 +650,39 @@ function renderLayerNav() {
     // Check if any layer uses this intent
     var existingIdx = layers.findIndex(function(l) { return l.intentId === intent.id; });
     var isSelected = selectedIntent === intent.id;
-    var isActive = existingIdx >= 0 && existingIdx === activeLayerIdx;
-    if (isActive || isSelected) {
+    var hasLayer = existingIdx >= 0;
+    if (isSelected) {
       chip.classList.add('active');
+      chip.style.color = '#000';
+      chip.style.backgroundColor = intent.color;
+      chip.style.borderColor = intent.color;
+    } else if (hasLayer) {
       chip.style.color = intent.color;
       chip.style.borderColor = intent.color;
     }
-    if (existingIdx >= 0) {
-      // Has a recorded layer — show filled dot
-      chip.textContent = '\u25CF ' + intent.label;
-      chip.style.color = intent.color;
-    } else {
-      chip.textContent = intent.label;
-    }
+    chip.textContent = intent.label;
     chip.addEventListener('click', function() {
       switchToIntent(intent.id, false);
     });
+    // Delete button for recorded layers
+    if (hasLayer) {
+      var del = document.createElement('span');
+      del.textContent = ' \u2715';
+      del.style.marginLeft = '4px';
+      del.style.opacity = '0.6';
+      del.addEventListener('click', function(e) {
+        e.stopPropagation();
+        var layer = layers[existingIdx];
+        if (layer.synth) { try { layer.synth.dispose(); } catch(ex){} }
+        if (layer.synth2) { try { layer.synth2.dispose(); } catch(ex){} }
+        if (layer.subOsc) { try { layer.subOsc.dispose(); } catch(ex){} }
+        if (layer.drive) { try { layer.drive.dispose(); } catch(ex){} }
+        if (layer.filter) { try { layer.filter.dispose(); } catch(ex){} }
+        layers.splice(existingIdx, 1);
+        renderRings(); renderEditPanel(); renderLayerNav();
+      });
+      chip.appendChild(del);
+    }
     layerNav.appendChild(chip);
   });
 }
