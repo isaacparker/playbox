@@ -560,39 +560,33 @@ function drawRing(ns, rOuter, rInner, layer, color, opacity, isActive) {
 }
 
 function getRingLayout(layers, focusIdx) {
-  // Stack rings from inside to outside: layer 0 = innermost, last = outermost
-  // The layer closest to focusIdx gets interpolated toward ACTIVE_BAND thickness
-  var result = [];
+  var result = new Array(layers.length).fill(null);
   if (layers.length === 0) return result;
+  var activeI = Math.round(focusIdx);
+  activeI = Math.max(0, Math.min(layers.length - 1, activeI));
 
-  // First pass: calculate band widths based on proximity to focus
-  var bands = [];
-  for (var i = 0; i < layers.length; i++) {
-    var dist = Math.abs(i - focusIdx);
-    // Smoothly interpolate: active = ACTIVE_BAND, others = INACTIVE_BAND
-    var t = Math.max(0, 1 - dist); // 1 at focus, 0 at distance >= 1
-    var band = INACTIVE_BAND + (ACTIVE_BAND - INACTIVE_BAND) * t;
-    bands.push(band);
+  // Active ring anchored at RING_CENTER_R
+  var aInner = RING_CENTER_R - ACTIVE_BAND / 2;
+  var aOuter = RING_CENTER_R + ACTIVE_BAND / 2;
+  result[activeI] = { rOuter: aOuter, rInner: aInner, opacity: 1, isActive: true };
+
+  // Stack inward from active (layers before it)
+  var r = aInner;
+  for (var i = activeI - 1; i >= 0; i--) {
+    r = r - RING_GAP - INACTIVE_BAND;
+    if (r < 5) break;
+    result[i] = { rOuter: r + INACTIVE_BAND, rInner: r, opacity: 1, isActive: false };
   }
 
-  // Second pass: stack from center outward
-  // Calculate total height to center everything
-  var totalHeight = 0;
-  for (var i = 0; i < bands.length; i++) {
-    totalHeight += bands[i];
-    if (i < bands.length - 1) totalHeight += RING_GAP;
+  // Stack outward from active (layers after it)
+  r = aOuter;
+  for (var i = activeI + 1; i < layers.length; i++) {
+    r = r + RING_GAP;
+    if (r + INACTIVE_BAND > 168) break;
+    result[i] = { rOuter: r + INACTIVE_BAND, rInner: r, opacity: 1, isActive: false };
+    r = r + INACTIVE_BAND;
   }
 
-  // Start stacking from innermost
-  var r = RING_CENTER_R - totalHeight / 2;
-  for (var i = 0; i < layers.length; i++) {
-    var rInner = r;
-    var rOuter = r + bands[i];
-    var isActive = Math.round(focusIdx) === i;
-    if (rInner < 5 || rOuter > 168) { result.push(null); r = rOuter + RING_GAP; continue; }
-    result.push({ rOuter: rOuter, rInner: rInner, opacity: 1, isActive: isActive });
-    r = rOuter + RING_GAP;
-  }
   return result;
 }
 
@@ -1149,18 +1143,20 @@ async function processRecording() {
   // 5. AI suggestion
   requestAISuggestion(layer);
 
+  // Set global accent to the newly recorded layer's color
+  var intentObj = INTENTS.find(function(ii) { return ii.color === layer.color; });
+  if (intentObj) setGlobalAccent(intentObj.color, intentObj.rgb);
+
   renderRings(); renderEditPanel(); renderLayerNav();
   if (!isPlaying) startTransport();
   setState('PLAYING');
 
-  // Auto-advance to next intent
+  // Auto-advance selectedIntent for next recording (but don't change active layer or accent)
   if (selectedIntent) {
     const currentIdx = INTENTS.findIndex(i => i.id === selectedIntent);
     const nextIdx = (currentIdx + 1) % INTENTS.length;
-    const next = INTENTS[nextIdx];
-    selectedIntent = next.id;
-    setGlobalAccent(next.color, next.rgb);
-    flowSub.textContent = next.label;
+    selectedIntent = INTENTS[nextIdx].id;
+    flowSub.textContent = INTENTS[nextIdx].label;
   }
   renderLayerNav();
 }
