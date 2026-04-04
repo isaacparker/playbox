@@ -560,33 +560,38 @@ function drawRing(ns, rOuter, rInner, layer, color, opacity, isActive) {
 }
 
 function getRingLayout(layers, focusIdx) {
-  // Returns array of {rOuter, rInner, opacity, isActive} for each layer
-  // Layers ordered: index 0 = innermost, last = outermost
-  // The focused layer gets the thick active band at RING_CENTER_R
+  // Stack rings from inside to outside: layer 0 = innermost, last = outermost
+  // The layer closest to focusIdx gets interpolated toward ACTIVE_BAND thickness
   var result = [];
   if (layers.length === 0) return result;
 
+  // First pass: calculate band widths based on proximity to focus
+  var bands = [];
   for (var i = 0; i < layers.length; i++) {
-    var offset = i - focusIdx; // negative = inside, positive = outside
-    var isActive = i === Math.round(focusIdx);
-    var band, centerR, opacity;
+    var dist = Math.abs(i - focusIdx);
+    // Smoothly interpolate: active = ACTIVE_BAND, others = INACTIVE_BAND
+    var t = Math.max(0, 1 - dist); // 1 at focus, 0 at distance >= 1
+    var band = INACTIVE_BAND + (ACTIVE_BAND - INACTIVE_BAND) * t;
+    bands.push(band);
+  }
 
-    if (isActive) {
-      band = ACTIVE_BAND;
-      centerR = RING_CENTER_R;
-      opacity = 1;
-    } else {
-      band = INACTIVE_BAND;
-      // Stack rings from center outward/inward
-      centerR = RING_CENTER_R + offset * (INACTIVE_BAND + RING_GAP + ACTIVE_BAND * 0.3);
-      // Scale band slightly based on distance
-      opacity = 1;
-    }
+  // Second pass: stack from center outward
+  // Calculate total height to center everything
+  var totalHeight = 0;
+  for (var i = 0; i < bands.length; i++) {
+    totalHeight += bands[i];
+    if (i < bands.length - 1) totalHeight += RING_GAP;
+  }
 
-    var rOuter = centerR + band / 2;
-    var rInner = centerR - band / 2;
-    if (rInner < 5 || rOuter > 168) { result.push(null); continue; }
-    result.push({ rOuter: rOuter, rInner: rInner, opacity: opacity, isActive: isActive });
+  // Start stacking from innermost
+  var r = RING_CENTER_R - totalHeight / 2;
+  for (var i = 0; i < layers.length; i++) {
+    var rInner = r;
+    var rOuter = r + bands[i];
+    var isActive = Math.round(focusIdx) === i;
+    if (rInner < 5 || rOuter > 168) { result.push(null); r = rOuter + RING_GAP; continue; }
+    result.push({ rOuter: rOuter, rInner: rInner, opacity: 1, isActive: isActive });
+    r = rOuter + RING_GAP;
   }
   return result;
 }
@@ -1126,7 +1131,9 @@ async function processRecording() {
   currentScene().layers.push(layer);
 
   // Set new layer as active in ring view
-  activeLayerIdx = currentScene().layers.length - 1;
+  var newIdx = currentScene().layers.length - 1;
+  activeLayerIdx = newIdx;
+  animActiveIdx = newIdx; // snap, don't animate from 0
 
   // Update global scale from all layers
   updateGlobalScale();
@@ -1142,7 +1149,7 @@ async function processRecording() {
   // 5. AI suggestion
   requestAISuggestion(layer);
 
-  renderRings(); renderEditPanel();
+  renderRings(); renderEditPanel(); renderLayerNav();
   if (!isPlaying) startTransport();
   setState('PLAYING');
 
