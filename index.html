@@ -317,6 +317,9 @@ min-height:32px;display:flex;align-items:center;
 (function(){
 'use strict';
 
+// Early error catcher — if script crashes during load, show it
+try {
+
 // ===== PALETTE =====
 const LAYER_COLORS = [
   '#0ff','#f0f','#0f0','#fa0','#08f','#f55','#af0','#f0a',
@@ -2307,6 +2310,10 @@ function updateVisuals() {
 }
 requestAnimationFrame(updateVisuals);
 
+} catch(loadErr) {
+  document.querySelector('#overlay p').textContent = 'LOAD ERROR: ' + loadErr.message;
+  console.error(loadErr);
+}
 })();
 </script>
 </body>
