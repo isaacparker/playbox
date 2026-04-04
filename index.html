@@ -489,6 +489,10 @@ function getSelectedIntent() {
   return INTENTS.find(i => i.id === selectedIntent);
 }
 
+let recFilledSteps = new Array(16).fill(false);
+let recLastStep = -1;
+let recAnalyser = null;
+
 // ===== CONCENTRIC RING SYSTEM =====
 const RING_CX = 170, RING_CY = 170;
 const RING_ACTIVE_OUTER = 158, RING_ACTIVE_INNER = 108;
@@ -922,10 +926,6 @@ flowBtn.addEventListener('pointerleave', (e) => {
 flowBtn.addEventListener('pointercancel', (e) => {
   if (appState === 'RECORDING') stopRecording();
 });
-
-let recAnalyser = null;
-let recFilledSteps = new Array(16).fill(false);
-let recLastStep = -1;
 
 function clearRecRing() {
   recFilledSteps = new Array(16).fill(false);
