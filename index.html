@@ -520,7 +520,8 @@ function hexToRgb(hex) {
 function drawRing(ns, rOuter, rInner, layer, color, opacity, isActive) {
   var g = document.createElementNS(ns, 'g');
   g.setAttribute('opacity', opacity);
-  var rgb = hexToRgb(color);
+  var isHex = color && color.charAt(0) === '#';
+  var rgb = isHex ? hexToRgb(color) : '0,255,255';
   var fillIdle = 'rgba('+rgb+',0.12)';
   var fillOn = color;
   for (var i = 0; i < 16; i++) {
@@ -531,9 +532,10 @@ function drawRing(ns, rOuter, rInner, layer, color, opacity, isActive) {
     var on = layer && layer.steps[i];
     var rec = !layer && recFilledSteps[i];
     p.setAttribute('fill', (on||rec) ? fillOn : fillIdle);
-    p.setAttribute('class', 'seg'+(i===currentStep?' current-step':''));
+    p.setAttribute('class', 'seg');
+    p.dataset.step = i;
+    if (i === currentStep) p.classList.add('current-step');
     if (isActive && layer) {
-      p.dataset.step = i;
       p.addEventListener('pointerdown', handleRingStepTap);
     }
     g.appendChild(p);
@@ -2349,8 +2351,13 @@ function updateVisuals() {
   // Step indicator
   stepIndicator.textContent = 'Step: ' + (currentStep + 1) + ' / 16';
 
-  // Re-render rings to update current step highlight
-  renderRings();
+  // Update current step highlight on rings (lightweight — just toggle class)
+  ringsSvg.querySelectorAll('.seg').forEach(function(seg) {
+    seg.classList.remove('current-step');
+  });
+  ringsSvg.querySelectorAll('.seg[data-step="' + currentStep + '"]').forEach(function(seg) {
+    seg.classList.add('current-step');
+  });
 }
 requestAnimationFrame(updateVisuals);
 
