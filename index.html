@@ -489,10 +489,13 @@ let recAnalyser = null;
 
 // ===== CONCENTRIC RING SYSTEM =====
 const CX = 170, CY = 170;
-const ACTIVE_R_OUTER = 155, ACTIVE_R_INNER = 105; // active band = 50px
-const ADJACENT_BAND = 14; // thin rings for neighbors
+const ACTIVE_BAND = 42; // active ring thickness
+const INACTIVE_BAND = 10; // neighbor ring thickness
 const RING_GAP = 2;
+const RING_CENTER_R = 130; // center radius of the active ring
 let activeLayerIdx = 0;
+let animActiveIdx = 0; // animated version for smooth transitions
+let animating = false;
 const layerNav = document.getElementById('layer-nav');
 
 function arcPath(cx, cy, rOuter, rInner, startAngle, endAngle) {
@@ -556,41 +559,95 @@ function drawRing(ns, rOuter, rInner, layer, color, opacity, isActive) {
   ringsSvg.appendChild(g);
 }
 
+function getRingLayout(layers, focusIdx) {
+  // Returns array of {rOuter, rInner, opacity, isActive} for each layer
+  // Layers ordered: index 0 = innermost, last = outermost
+  // The focused layer gets the thick active band at RING_CENTER_R
+  var result = [];
+  if (layers.length === 0) return result;
+
+  for (var i = 0; i < layers.length; i++) {
+    var offset = i - focusIdx; // negative = inside, positive = outside
+    var isActive = i === Math.round(focusIdx);
+    var band, centerR, opacity;
+
+    if (isActive) {
+      band = ACTIVE_BAND;
+      centerR = RING_CENTER_R;
+      opacity = 1;
+    } else {
+      band = INACTIVE_BAND;
+      // Stack rings from center outward/inward
+      centerR = RING_CENTER_R + offset * (INACTIVE_BAND + RING_GAP + ACTIVE_BAND * 0.3);
+      // Scale band slightly based on distance
+      opacity = 1;
+    }
+
+    var rOuter = centerR + band / 2;
+    var rInner = centerR - band / 2;
+    if (rInner < 5 || rOuter > 168) { result.push(null); continue; }
+    result.push({ rOuter: rOuter, rInner: rInner, opacity: opacity, isActive: isActive });
+  }
+  return result;
+}
+
 function renderRings() {
   while (ringsSvg.firstChild) ringsSvg.removeChild(ringsSvg.firstChild);
   var ns = 'http://www.w3.org/2000/svg';
   var layers = currentScene().layers;
 
-  // Draw inner neighbors (inside the active ring, from innermost outward)
-  var innerR = ACTIVE_R_INNER;
-  for (var i = activeLayerIdx - 1; i >= 0 && i >= activeLayerIdx - 2; i--) {
-    var dist = activeLayerIdx - i;
-    var band = ADJACENT_BAND / dist;
-    var rO = innerR - RING_GAP;
-    var rI = Math.max(8, rO - band);
-    if (rI < 8) break;
-    drawRing(ns, rO, rI, layers[i], layers[i].color, 0.35 / dist, false);
-    innerR = rI;
-  }
-
-  // Draw active ring
   if (layers.length === 0) {
-    drawRing(ns, ACTIVE_R_OUTER, ACTIVE_R_INNER, null, 'var(--accent)', 1, true);
-  } else if (layers[activeLayerIdx]) {
-    drawRing(ns, ACTIVE_R_OUTER, ACTIVE_R_INNER, layers[activeLayerIdx], layers[activeLayerIdx].color, 1, true);
+    // Empty state
+    var aOuter = RING_CENTER_R + ACTIVE_BAND / 2;
+    var aInner = RING_CENTER_R - ACTIVE_BAND / 2;
+    drawRing(ns, aOuter, aInner, null, 'var(--accent)', 1, true);
+    return;
   }
 
-  // Draw outer neighbors (outside the active ring, from closest outward)
-  var outerR = ACTIVE_R_OUTER;
-  for (var i = activeLayerIdx + 1; i < layers.length && i <= activeLayerIdx + 2; i++) {
-    var dist = i - activeLayerIdx;
-    var band = ADJACENT_BAND / dist;
-    var rI = outerR + RING_GAP;
-    var rO = rI + band;
-    if (rO > 168) break;
-    drawRing(ns, rO, rI, layers[i], layers[i].color, 0.35 / dist, false);
-    outerR = rO;
+  var layout = getRingLayout(layers, animActiveIdx);
+
+  // Draw from outermost to innermost so inner rings paint on top
+  for (var i = layers.length - 1; i >= 0; i--) {
+    if (!layout[i]) continue;
+    var l = layout[i];
+    drawRing(ns, l.rOuter, l.rInner, layers[i], layers[i].color, l.opacity, l.isActive);
   }
+}
+
+function switchToLayer(newIdx) {
+  if (newIdx === activeLayerIdx) return;
+  activeLayerIdx = newIdx;
+  // Animate toward new position
+  if (!animating) {
+    animating = true;
+    animateRings();
+  }
+  // Update accent color
+  var layer = currentScene().layers[newIdx];
+  if (layer) {
+    var intentObj = INTENTS.find(function(i) { return i.color === layer.color; });
+    if (intentObj) {
+      setGlobalAccent(intentObj.color, intentObj.rgb);
+      selectedIntent = intentObj.id;
+      flowSub.textContent = intentObj.label;
+    }
+  }
+  renderLayerNav();
+  renderEditPanel();
+}
+
+function animateRings() {
+  var diff = activeLayerIdx - animActiveIdx;
+  if (Math.abs(diff) < 0.02) {
+    animActiveIdx = activeLayerIdx;
+    animating = false;
+    renderRings();
+    return;
+  }
+  // Smooth lerp
+  animActiveIdx += diff * 0.18;
+  renderRings();
+  requestAnimationFrame(animateRings);
 }
 
 function handleRingStepTap(e) {
@@ -630,11 +687,8 @@ function renderLayerNav() {
     }
     chip.addEventListener('click', function() {
       if (existingIdx >= 0) {
-        // Switch to existing layer
-        activeLayerIdx = existingIdx;
-        setGlobalAccent(intent.color, intent.rgb);
-        selectedIntent = intent.id;
-        flowSub.textContent = intent.label;
+        // Switch to existing layer with animation
+        switchToLayer(existingIdx);
       } else {
         // Select intent for next recording
         selectedIntent = intent.id;
