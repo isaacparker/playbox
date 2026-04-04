@@ -135,7 +135,7 @@ animation:pulse-tick-expand 0.4s ease-out forwards;
 100%{opacity:0;transform:scale(1.2)}
 }
 #flow-btn{
-position:relative;z-index:10;width:218px;height:218px;border-radius:50%;
+position:relative;z-index:10;width:178px;height:178px;border-radius:50%;
 background:radial-gradient(circle,#111 0%,#0a0a0a 100%);
 border:3px solid transparent;cursor:pointer;
 display:flex;align-items:center;justify-content:center;flex-direction:column;
@@ -489,10 +489,10 @@ let recAnalyser = null;
 
 // ===== CONCENTRIC RING SYSTEM =====
 const CX = 170, CY = 170;
-const ACTIVE_BAND = 42; // active ring thickness
-const INACTIVE_BAND = 10; // neighbor ring thickness
+const ACTIVE_BAND = 32; // active ring thickness
+const INACTIVE_BAND = 8; // neighbor ring thickness
 const RING_GAP = 2;
-const RING_CENTER_R = 130; // center radius of the active ring
+const RING_CENTER_R = 105; // center radius — allows 5 rings on each side
 let activeLayerIdx = 0;
 const layerNav = document.getElementById('layer-nav');
 
@@ -559,78 +559,61 @@ function drawRing(ns, rOuter, rInner, layer, color, opacity, isActive) {
   ringsSvg.appendChild(g);
 }
 
-// Map intent IDs to slots (fixed order)
-function getIntentSlotIdx(intentId) {
-  return INTENTS.findIndex(function(ii) { return ii.id === intentId; });
-}
-function getActiveSlotIdx() {
-  return getIntentSlotIdx(selectedIntent);
-}
+// All 6 slots always exist. Active = thick center. Others stack in/out by slot order.
+let autoAdvance = true; // true until user manually navigates
 
 function renderRings() {
   while (ringsSvg.firstChild) ringsSvg.removeChild(ringsSvg.firstChild);
   var ns = 'http://www.w3.org/2000/svg';
   var layers = currentScene().layers;
-  var activeSlot = getActiveSlotIdx();
+  var activeSlot = INTENTS.findIndex(function(ii) { return ii.id === selectedIntent; });
   if (activeSlot < 0) activeSlot = 0;
 
-  // Build a map: intent slot index -> layer (or null if not recorded)
+  // Map each intent slot to its layer (or null)
   var slotLayers = new Array(INTENTS.length).fill(null);
   layers.forEach(function(l) {
-    var slot = getIntentSlotIdx(l.intentId);
-    if (slot >= 0) slotLayers[slot] = l;
+    var s = INTENTS.findIndex(function(ii) { return ii.id === l.intentId; });
+    if (s >= 0) slotLayers[s] = l;
   });
 
-  // Calculate ring positions: activeSlot = thick center, others stack in/out
-  var rings = []; // {rOuter, rInner, layer, intent, isActive}
-
-  // Active ring at center
+  // Build all 6 ring positions
+  // Active slot at RING_CENTER_R with ACTIVE_BAND
+  // Slots before → stack inward, slots after → stack outward
   var aInner = RING_CENTER_R - ACTIVE_BAND / 2;
   var aOuter = RING_CENTER_R + ACTIVE_BAND / 2;
-  rings.push({
-    rOuter: aOuter, rInner: aInner,
-    layer: slotLayers[activeSlot], intent: INTENTS[activeSlot],
-    isActive: true, slot: activeSlot
-  });
 
-  // Stack inward: slots before activeSlot (only those with recorded layers)
+  var positions = new Array(INTENTS.length);
+  positions[activeSlot] = { rInner: aInner, rOuter: aOuter, isActive: true };
+
+  // Stack inward from active
   var r = aInner;
   for (var s = activeSlot - 1; s >= 0; s--) {
-    if (!slotLayers[s]) continue;
     r = r - RING_GAP - INACTIVE_BAND;
-    if (r < 5) break;
-    rings.push({
-      rOuter: r + INACTIVE_BAND, rInner: r,
-      layer: slotLayers[s], intent: INTENTS[s],
-      isActive: false, slot: s
-    });
+    if (r < 5) { positions[s] = null; continue; }
+    positions[s] = { rInner: r, rOuter: r + INACTIVE_BAND, isActive: false };
   }
 
-  // Stack outward: slots after activeSlot (only those with recorded layers)
+  // Stack outward from active
   r = aOuter;
   for (var s = activeSlot + 1; s < INTENTS.length; s++) {
-    if (!slotLayers[s]) continue;
     r = r + RING_GAP;
-    if (r + INACTIVE_BAND > 168) break;
-    rings.push({
-      rOuter: r + INACTIVE_BAND, rInner: r,
-      layer: slotLayers[s], intent: INTENTS[s],
-      isActive: false, slot: s
-    });
+    if (r + INACTIVE_BAND > 169) { positions[s] = null; continue; }
+    positions[s] = { rInner: r, rOuter: r + INACTIVE_BAND, isActive: false };
     r = r + INACTIVE_BAND;
   }
 
   // Draw from outermost to innermost
-  rings.sort(function(a, b) { return b.rOuter - a.rOuter; });
-  rings.forEach(function(ring) {
-    var color = ring.intent.color;
-    drawRing(ns, ring.rOuter, ring.rInner, ring.layer, color, 1, ring.isActive);
-  });
+  for (var s = INTENTS.length - 1; s >= 0; s--) {
+    if (!positions[s]) continue;
+    var p = positions[s];
+    drawRing(ns, p.rOuter, p.rInner, slotLayers[s], INTENTS[s].color, 1, p.isActive);
+  }
 }
 
-function switchToIntent(intentId) {
+function switchToIntent(intentId, isAuto) {
   var intent = INTENTS.find(function(i) { return i.id === intentId; });
   if (!intent) return;
+  if (!isAuto) autoAdvance = false; // user manually navigated
   selectedIntent = intentId;
   setGlobalAccent(intent.color, intent.rgb);
   flowSub.textContent = intent.label;
@@ -679,7 +662,7 @@ function renderLayerNav() {
       chip.textContent = intent.label;
     }
     chip.addEventListener('click', function() {
-      switchToIntent(intent.id);
+      switchToIntent(intent.id, false);
     });
     layerNav.appendChild(chip);
   });
@@ -1129,16 +1112,22 @@ async function processRecording() {
   if (!isPlaying) startTransport();
   setState('PLAYING');
 
-  // Auto-advance to next unrecorded intent (switches UI color + ring)
-  var allLayers = currentScene().layers;
-  var usedIntents = new Set(allLayers.map(function(l) { return l.intentId; }).filter(Boolean));
-  var nextIntent = INTENTS.find(function(ii) { return !usedIntents.has(ii.id); });
-  if (nextIntent) {
-    switchToIntent(nextIntent.id);
+  // Auto-advance to next unrecorded intent if user hasn't manually navigated
+  if (autoAdvance) {
+    var allLayers = currentScene().layers;
+    var usedIntents = new Set(allLayers.map(function(l) { return l.intentId; }).filter(Boolean));
+    var nextIntent = INTENTS.find(function(ii) { return !usedIntents.has(ii.id); });
+    if (nextIntent) {
+      switchToIntent(nextIntent.id, true);
+    } else {
+      if (intentObj) switchToIntent(intentObj.id, true);
+    }
   } else {
-    // All recorded — stay on current
-    if (intentObj) switchToIntent(intentObj.id);
+    // User navigated manually — just refresh current view
+    renderRings(); renderEditPanel(); renderLayerNav();
   }
+  // Re-enable auto-advance when user records on an unrecorded slot
+  autoAdvance = true;
 }
 
 // ===== FIND LOUDEST REGION =====
