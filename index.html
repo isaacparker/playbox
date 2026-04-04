@@ -184,12 +184,17 @@ z-index:3;min-height:24px;
 }
 .layer-strip{
 display:flex;flex-direction:column;padding:10px 12px;
-border-bottom:1px solid var(--accent);gap:6px;
+border-bottom:1px solid var(--border);gap:6px;
 }
+.layer-strip.active-strip{border-bottom-color:var(--accent)}
 .layer-strip.collapsed .step-grid,
 .layer-strip.collapsed .layer-controls,
 .layer-strip.collapsed .synth-panel,
-.layer-strip.collapsed .note-picker{display:none!important}
+.layer-strip.collapsed .note-picker,
+.layer-strip.collapsed .preset-bar{display:none!important}
+.layer-strip.collapsed .layer-type{color:var(--text-dim)!important;border-color:var(--border)!important}
+.layer-strip.collapsed .layer-btn{color:var(--text-dim)}
+.layer-strip.collapsed .synth-toggle{display:none}
 .preset-bar{display:none;gap:3px;overflow-x:auto;padding:2px 0;-webkit-overflow-scrolling:touch}
 .preset-bar.open{display:flex}
 .preset-bar .preset-pill{
@@ -1643,19 +1648,21 @@ function renderAllLayers() {
   scene.layers.forEach((layer, idx) => {
     const strip = document.createElement('div');
     const isExpanded = expandedLayers.has(layer.id);
-    strip.className = 'layer-strip' + (isExpanded ? '' : ' collapsed');
+    strip.className = 'layer-strip' + (isExpanded ? ' active-strip' : ' collapsed');
     strip.style.setProperty('--layer-color', layer.color);
 
     // Header row
     const header = document.createElement('div');
     header.className = 'layer-header';
 
-    // Type chip — shows intent name, tappable to show presets
+    // Type chip — shows intent name, tappable to expand and activate
     const typeEl = document.createElement('div');
     typeEl.className = 'layer-type';
-    typeEl.style.borderColor = layer.color;
-    typeEl.style.color = layer.color;
     const typeName = layer.name || (layer.isPercussive ? 'Perc' : 'Synth');
+    if (isExpanded) {
+      typeEl.style.borderColor = layer.color;
+      typeEl.style.color = layer.color;
+    }
     typeEl.textContent = typeName;
     header.appendChild(typeEl);
 
@@ -1663,11 +1670,25 @@ function renderAllLayers() {
     let headerNoteDisp = null;
     const expandBtn = document.createElement('div');
     expandBtn.className = 'layer-name';
-    expandBtn.style.color = layer.color;
     expandBtn.textContent = isExpanded ? '\u25B4' : '\u25BE';
+    if (isExpanded) expandBtn.style.color = layer.color;
     expandBtn.addEventListener('click', () => {
-      if (expandedLayers.has(layer.id)) expandedLayers.delete(layer.id);
-      else expandedLayers.add(layer.id);
+      if (expandedLayers.has(layer.id)) {
+        expandedLayers.delete(layer.id);
+      } else {
+        expandedLayers.clear();
+        expandedLayers.add(layer.id);
+        // Shift global UI accent to this layer's color
+        const intentObj = INTENTS.find(i => i.color === layer.color);
+        if (intentObj) {
+          setGlobalAccent(intentObj.color, intentObj.rgb);
+          selectedIntent = intentObj.id;
+          flowSub.textContent = intentObj.label;
+          intentRing.querySelectorAll('.intent-chip').forEach(c => {
+            c.classList.toggle('active', c.textContent === intentObj.label);
+          });
+        }
+      }
       renderAllLayers();
     });
     header.appendChild(expandBtn);
